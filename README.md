@@ -1,6 +1,7 @@
 # Tube Dubbing — Translate & Dub for YouTube
 
 Tiện ích mở rộng trình duyệt giúp dịch phụ đề video YouTube sang ngôn ngữ khác và lồng tiếng bằng AI (Gemini + Microsoft Edge TTS), đồng bộ trực tiếp theo thời gian phụ đề gốc xuất hiện trên video.
+<p>Truy cập vào <b><a class="api-link" target="_blank" href="https://aistudio.google.com/api-keys">https://aistudio.google.com/api-keys</a></b> để tạo Gemini API key</p>
 
 ## Chính sách quyền riêng tư
 
