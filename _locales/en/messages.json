@@ -1,0 +1,10 @@
+{
+   "extensionDescription": {
+      "description": "The description of the extension.",
+      "message": "Translate and dub videos with just one click."
+   },
+   "extensionName": {
+      "description": "The name of the extension.",
+      "message": "Tube-Dubbing: Video Translation & Dubbing"
+   }
+}

@@ -1,0 +1,47 @@
+{
+   "action": {
+      "default_icon": {
+         "16": "icon/16x16.png",
+         "32": "icon/32x32.png",
+         "64": "icon/64x64.png"
+      },
+      "default_popup": "popup.html"
+   },
+   "background": {
+      "service_worker": "background.js"
+   },
+   "content_scripts": [ {
+      "js": [ "utils/parser.js", "utils/normalizer.js", "utils/timing.js", "utils/segmenter.js", "content.js" ],
+      "matches": [ "https://*.youtube.com/*" ],
+      "run_at": "document_idle"
+   }, {
+      "js": [ "inject.js" ],
+      "matches": [ "https://*.youtube.com/*" ],
+      "run_at": "document_start",
+      "world": "MAIN"
+   } ],
+   "declarative_net_request": {
+      "rule_resources": [ {
+         "enabled": true,
+         "id": "ruleset_1",
+         "path": "rules.json"
+      } ]
+   },
+   "default_locale": "vi",
+   "description": "__MSG_extensionDescription__",
+   "host_permissions": [ "<all_urls>" ],
+   "icons": {
+      "16": "icon/16x16.png",
+      "32": "icon/32x32.png",
+      "64": "icon/64x64.png"
+   },
+   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAjdMBOcjoo/WIWTfvSOxkZY8mevkPsIXuvqVoYMopMlENsf4UO7R5OkjHhC9oDPiNhgbMdSWGojdfiT6bVKqg843Eatm5FLwsSvWHw8IL5on0B/SllQjWsRl4JgSSxngfV4H4ZAst2DNQpM5tRWNI9jeYMafDQCUYSxXLD9PiiB2IOd6HaZRtiOvUrTghSZzzHxK7gWY/8H5QGUEaWuPK1IrBaUm7DpdNkVhfdLrGQNCn4AkafpnEP7vY3um+CkxGpl6GgTMyDaiX0tdqOhyhMFtAAa2UFVBgejweCsT0TrUJl/skII7PjezLHNO+0hjCHHsvy39JFJcOQr+ovyTW6QIDAQAB",
+   "manifest_version": 3,
+   "name": "__MSG_extensionName__",
+   "oauth2": {
+      "client_id": "490117631093-1pgu0ni9t23d0pqn0m9camuh978rm0eh.apps.googleusercontent.com",
+      "scopes": [ "https://www.googleapis.com/auth/userinfo.email", "https://www.googleapis.com/auth/userinfo.profile" ]
+   },
+   "permissions": [ "activeTab", "storage", "declarativeNetRequest", "identity" ],
+   "version": "2.4.14"
+}
