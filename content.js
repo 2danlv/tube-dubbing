@@ -6,6 +6,12 @@ if (!DEBUG) {
 
 console.log("[XT-Extension] Khởi động bộ chặn Network Transcript!");
 
+// Log chuyển đổi trạng thái tab ẩn/hiện để chẩn đoán vấn đề lồng tiếng im bặt khi chuyển tab
+document.addEventListener('visibilitychange', () => {
+    const video = document.querySelector('video');
+    console.log(`[XT-Extension] Tab visibility đổi thành "${document.visibilityState}". video.paused=${video ? video.paused : "?"}, activeTTSAudio.paused=${typeof activeTTSAudio !== "undefined" && activeTTSAudio ? activeTTSAudio.paused : "(không có)"}`);
+});
+
 // --- NEW TRANSCRIPT INTERCEPTOR LOGIC ---
 // inject.js đã được chuyển cấu hình chạy trực tiếp ở MAIN world thông qua manifest.json để tránh lỗi CSP trên Brave/Edge.
 
@@ -102,6 +108,10 @@ let currentPlayingSegment = null;
 let isSettingVolumeSelf = false;
 let adWasPlaying = false;
 
+// Âm lượng video gốc tối thiểu khi đang lồng tiếng: không để tab hoàn toàn im lặng, vì Chrome
+// chặn audio.play() cho các tab nền không phát âm thanh, khiến lồng tiếng bị im bặt khi chuyển tab.
+const MIN_DUCK_VOLUME = 0.02;
+
 // Quản lý âm lượng video gốc khi lồng tiếng được bật/tắt
 function syncVideoVolume() {
     if (isAdPlaying()) return;
@@ -113,7 +123,8 @@ function syncVideoVolume() {
             originalVolume = video.volume;
         }
         isSettingVolumeSelf = true;
-        video.volume = originalVolume * 0.15;
+        video.volume = Math.max(originalVolume * 0.15, MIN_DUCK_VOLUME);
+        video.muted = false; // Không để video gốc bị mute hẳn khi đang lồng tiếng
         isSettingVolumeSelf = false;
         console.log(`[XT-Extension] Đã giảm âm lượng video xuống: ${(video.volume * 100).toFixed(0)}% (đang bật lồng tiếng).`);
     } else {
@@ -554,7 +565,7 @@ async function translateBlock(blockIdx, apiKey, model, targetLang) {
             // Bước 2: Tải giọng nói Edge TTS cho toàn bộ câu thoại trong khối
             const resultStorage = await new Promise(res => chrome.storage.local.get(["gemini_tts_voice", "gemini_tts_rate"], res));
             const ttsVoice = resultStorage.gemini_tts_voice || "vi-VN-HoaiMyNeural";
-            const ttsRate = resultStorage.gemini_tts_rate || "+0%";
+            const ttsRate = resultStorage.gemini_tts_rate || "-10%";
 
             const ttsTasks = chunk.map(item => async () => {
                 const mainItem = window.latestTranscriptData.find(m => m.id === item.id);
@@ -621,7 +632,7 @@ async function callGeminiAPI(chunk, apiKey, model, targetLang) {
 }
 
 // Hàm điều phối sinh giọng nói lồng tiếng chính (Chỉ sử dụng Edge TTS qua Background)
-async function generateTTS(text, voice = "vi-VN-HoaiMyNeural", rate = "+0%") {
+async function generateTTS(text, voice = "vi-VN-HoaiMyNeural", rate = "-10%") {
     console.log(`[XT-Extension] Đang gọi Edge TTS từ Background cho câu: "${text}"`);
     const res = await new Promise((resolve, reject) => {
         chrome.runtime.sendMessage({ action: "GENERATE_EDGE_TTS", text, voice, rate }, response => {
@@ -763,14 +774,22 @@ function handleVideoVolumeChange() {
     const video = document.querySelector('video');
     if (!video) return;
 
+    // Không để user mute hẳn video gốc trong lúc lồng tiếng: tab im lặng hoàn toàn ở khoảng
+    // ngắt giữa các câu sẽ khiến Chrome chặn audio.play() mới khi tab bị chuyển xuống nền.
+    if (video.muted) {
+        isSettingVolumeSelf = true;
+        video.muted = false;
+        isSettingVolumeSelf = false;
+    }
+
     // Nếu volume hiện tại khác với mức 15% mong muốn
-    const targetVolume = originalVolume * 0.15;
+    const targetVolume = Math.max(originalVolume * 0.15, MIN_DUCK_VOLUME);
     if (Math.abs(video.volume - targetVolume) > 0.01) {
         console.log(`[XT-Extension] Phát hiện thay đổi volume ngoài: ${video.volume}. Cập nhật volume gốc.`);
         originalVolume = video.volume;
 
         isSettingVolumeSelf = true;
-        video.volume = originalVolume * 0.15;
+        video.volume = Math.max(originalVolume * 0.15, MIN_DUCK_VOLUME);
         isSettingVolumeSelf = false;
     }
 }
@@ -977,7 +996,7 @@ async function preloadAudioForBlock(blockIdx) {
     try {
         const resultStorage = await new Promise(res => chrome.storage.local.get(["gemini_tts_voice", "gemini_tts_rate"], res));
         const ttsVoice = resultStorage.gemini_tts_voice || "vi-VN-HoaiMyNeural";
-        const ttsRate = resultStorage.gemini_tts_rate || "+0%";
+        const ttsRate = resultStorage.gemini_tts_rate || "-10%";
 
         const ttsTasks = chunk.map(item => async () => {
             const mainItem = window.latestTranscriptData.find(m => m.id === item.id);
@@ -1038,7 +1057,7 @@ async function generateAndPlayTTSOnTheFly(segment) {
     try {
         const resultStorage = await new Promise(res => chrome.storage.local.get(["gemini_tts_voice", "gemini_tts_rate"], res));
         const ttsVoice = resultStorage.gemini_tts_voice || "vi-VN-HoaiMyNeural";
-        const ttsRate = resultStorage.gemini_tts_rate || "+0%";
+        const ttsRate = resultStorage.gemini_tts_rate || "-10%";
 
         console.log(`[XT-Extension] Tạo nhanh TTS lồng tiếng cho câu: "${segment.textTranslated}"`);
         const audioUrl = await generateTTS(segment.textTranslated, ttsVoice, ttsRate);
@@ -1094,7 +1113,7 @@ function playVoiceOverObject(audio, segment) {
                 const ratio = audio.duration / segmentDuration;
                 if (ratio > 1.05) {
                     // Tăng tốc độ nói lên tối đa 1.6 lần để khớp với miệng nhân vật và khung thời gian
-                    baseRate = Math.min(1.6, ratio); ``
+                    baseRate = Math.min(1.6, ratio);
                     console.log(`[XT-Extension] Tốc độ lồng tiếng cơ bản: ${baseRate.toFixed(2)}x để khớp thời lượng.`);
                 }
             }
@@ -1116,7 +1135,9 @@ function playVoiceOverObject(audio, segment) {
             audio.currentTime = 0;
         }
 
-        audio.play().catch(err => console.warn("[XT-Extension] Lỗi phát âm thanh lồng tiếng:", err));
+        audio.play().catch(err => {
+            console.error(`[XT-Extension] Lỗi phát âm thanh lồng tiếng (document.hidden=${document.hidden}, video.paused=${video ? video.paused : "?"}, video.currentTime=${video ? video.currentTime.toFixed(2) : "?"}):`, err);
+        });
     };
 
     if (audio.readyState >= 1) { // loadedmetadata

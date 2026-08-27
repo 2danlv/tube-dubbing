@@ -125,7 +125,7 @@ async function loadSettings() {
 
             const targetLang = result.gemini_target_lang || "Tiếng Việt";
             const ttsVoice = result.gemini_tts_voice || "vi-VN-HoaiMyNeural";
-            const ttsRate = result.gemini_tts_rate || "+0%";
+            const ttsRate = result.gemini_tts_rate || "-10%";
 
             document.getElementById("api-target-lang").value = targetLang;
             document.getElementById("api-tts-rate").value = ttsRate;
@@ -172,7 +172,7 @@ function initUIEvents() {
         const modelVal = document.getElementById("api-model").value.trim() || DEFAULT_MODEL;
         const langVal = document.getElementById("api-target-lang").value;
         const voiceVal = document.getElementById("api-tts-voice").value;
-        const rateVal = document.getElementById("api-tts-rate").value || "+0%";
+        const rateVal = document.getElementById("api-tts-rate").value || "-10%";
 
         if (!keyVal) {
             showToast("Vui lòng nhập Gemini API Key!", "❌");

@@ -132,7 +132,7 @@ async function getTtsToken(locale) {
     return tokenInfo;
 }
 
-async function fetchTtsAudio(text, voice, rate = "+0%") {
+async function fetchTtsAudio(text, voice, rate = "-10%") {
     try {
         const voiceParts = voice.split("-");
         const locale = voiceParts.slice(0, 2).join("-");
@@ -248,7 +248,7 @@ async function generateSecMsGecToken() {
     return hashArray.map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
 }
 
-async function generateEdgeTTSBackground(text, voice = "vi-VN-HoaiMyNeural", rate = "+0%") {
+async function generateEdgeTTSBackground(text, voice = "vi-VN-HoaiMyNeural", rate = "-10%") {
     const connectionId = generateConnectionId();
     const token = await generateSecMsGecToken();
     const wsUrl = `wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken=6A5AA1D4EAFF4E9FB37E23D68491D6F4&ConnectionId=${connectionId}&Sec-MS-GEC=${token}&Sec-MS-GEC-Version=1-143.0.3650.75`;
@@ -384,7 +384,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (voice === "vi-VN-NamNeural") {
             voice = "vi-VN-NamMinhNeural";
         }
-        fetchTtsAudio(text, voice, rate || "+0%")
+        fetchTtsAudio(text, voice, rate || "-10%")
             .then(audioBase64 => {
                 sendResponse({ status: "success", audioBase64: audioBase64 });
             })
