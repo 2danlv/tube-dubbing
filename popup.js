@@ -1,11 +1,3 @@
-// Cấu hình Firebase - Hãy điền thông tin dự án Firebase của bạn vào đây
-const FIREBASE_API_KEY = "AIzaSyDG97T6_74DlRzG33JIp31qgOFUto_pl-A";
-const FIREBASE_PROJECT_ID = "tube-dubbing-auth";
-// Client ID Web Application mới cho Google OAuth (để hỗ trợ đăng nhập trên Brave/Edge...)
-const GOOGLE_CLIENT_ID_WEB = "490117631093-4dse7lauo1fdhb8nmtdtmsof51smb6iv.apps.googleusercontent.com"; 
-
-const BACKEND_URL = "https://api-tko3zgrl6a-as.a.run.app"; // Thay thế bằng URL Backend Production của bạn khi deploy
-
 // Phím lưu trữ & cấu hình mặc định cho Gemini
 const DEFAULT_API_KEY = "";
 const DEFAULT_MODEL = "gemini-3.5-flash-lite";
@@ -92,22 +84,11 @@ let activeVideoTitle = "youtube-transcript";
 
 // Khi mở Popup
 document.addEventListener("DOMContentLoaded", async () => {
-    // Khởi tạo giao diện xác thực
-    initAuthUI();
-
-    // Kiểm tra trạng thái đăng nhập
-    const isAuthenticated = await checkAuthStatus();
-    if (!isAuthenticated) {
-        showLoginOverlay();
-    } else {
-        await initApplication();
-    }
+    await initApplication();
 });
 
-// Khởi chạy ứng dụng sau khi đã xác thực
+// Khởi chạy ứng dụng
 async function initApplication() {
-    hideLoginOverlay();
-
     // 1. Tải cấu hình cài đặt từ Storage
     await loadSettings();
 
@@ -117,94 +98,42 @@ async function initApplication() {
 
     activeTabId = tab.id;
 
-    const isUdemy = tab.url && tab.url.includes("udemy.com");
-    const isDouyin = tab.url && tab.url.includes("douyin.com");
-    if (isUdemy) {
-        activeVideoTitle = tab.title ? tab.title.replace(" | Udemy", "").replace(/[\\/:*?"<>|]/g, "_") : "udemy-transcript";
-        const lectureMatch = tab.url.match(/lecture\/(\d+)/);
-        const courseMatch = tab.url.match(/course\/([^\/\?]+)/);
-        
-        if (lectureMatch) {
-            activeVideoId = "udemy_" + lectureMatch[1];
-        } else if (courseMatch) {
-            activeVideoId = "udemy_course_" + courseMatch[1];
-        } else {
-            activeVideoId = "udemy_lecture";
-        }
-    } else if (isDouyin) {
-        activeVideoTitle = tab.title ? tab.title.replace(/[\\/:*?"<>|]/g, "_") : "douyin-transcript";
-        const videoMatch = tab.url.match(/video\/(\d+)/);
-        if (videoMatch) {
-            activeVideoId = "douyin_" + videoMatch[1];
-        } else {
-            activeVideoId = "douyin_video";
-        }
-    } else {
-        activeVideoTitle = tab.title ? tab.title.replace(" - YouTube", "").replace(/[\\/:*?"<>|]/g, "_") : "youtube-transcript";
-        if (tab.url) {
-            try {
-                const urlObj = new URL(tab.url);
-                activeVideoId = urlObj.searchParams.get("v");
-            } catch (e) {
-                console.error("Không thể phân tích URL:", e);
-            }
+    activeVideoTitle = tab.title ? tab.title.replace(" - YouTube", "").replace(/[\\/:*?"<>|]/g, "_") : "youtube-transcript";
+    if (tab.url) {
+        try {
+            const urlObj = new URL(tab.url);
+            activeVideoId = urlObj.searchParams.get("v");
+        } catch (e) {
+            console.error("Không thể phân tích URL:", e);
         }
     }
 
     // 3. Khởi tạo các sự kiện giao diện
     initUIEvents();
 
-    // Cập nhật giao diện cảnh báo Udemy PRO nếu đang ở tab Udemy
-    chrome.storage.local.get(["user_status"], (result) => {
-        updateUdemyProUI(result.user_status);
-    });
-
-    // 4. Gửi yêu cầu lấy phụ đề đã cào từ content.js / udemy_content.js
+    // 4. Gửi yêu cầu lấy phụ đề đã cào từ content.js
     fetchTranscriptFromContent();
-}
-
-function updateUdemyProUI(userStatus) {
-    chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
-        if (!tab) return;
-        const isUdemy = tab.url && tab.url.includes("udemy.com");
-        const warningBanner = document.getElementById("udemy-pro-warning");
-        const translateBtn = document.getElementById("btn-translate-action");
-        
-        if (isUdemy) {
-            const status = (userStatus || "free").toLowerCase();
-            if (status !== "pro") {
-                if (warningBanner) warningBanner.style.display = "block";
-                if (translateBtn) translateBtn.disabled = true;
-            } else {
-                if (warningBanner) warningBanner.style.display = "none";
-                if (translateBtn) translateBtn.disabled = false;
-            }
-        } else {
-            if (warningBanner) warningBanner.style.display = "none";
-            if (translateBtn) translateBtn.disabled = false;
-        }
-    });
 }
 
 // Tải cấu hình cài đặt
 async function loadSettings() {
     return new Promise((resolve) => {
-        chrome.storage.local.get(["gemini_api_key", "gemini_model", "gemini_target_lang", "gemini_tts_voice", "user_status"], (result) => {
+        chrome.storage.local.get(["gemini_api_key", "gemini_model", "gemini_target_lang", "gemini_tts_voice"], (result) => {
             const apiKey = result.gemini_api_key || "";
             document.getElementById("api-key").value = apiKey;
             document.getElementById("api-model").value = result.gemini_model || DEFAULT_MODEL;
-            
+
             const targetLang = result.gemini_target_lang || "Tiếng Việt";
             const ttsVoice = result.gemini_tts_voice || "vi-VN-HoaiMyNeural";
-            
+
             document.getElementById("api-target-lang").value = targetLang;
-            
+
             // Cập nhật động danh sách giọng lồng tiếng theo cấu hình đã lưu
             updateVoiceDropdown(targetLang, ttsVoice);
-            
+
             // Cập nhật cảnh báo API Key
-            updateApiKeyWarning(apiKey, result.user_status);
-            
+            updateApiKeyWarning(apiKey);
+
             resolve();
         });
     });
@@ -242,39 +171,34 @@ function initUIEvents() {
         const langVal = document.getElementById("api-target-lang").value;
         const voiceVal = document.getElementById("api-tts-voice").value;
 
-        chrome.storage.local.get(["user_status"], (result) => {
-            const userStatus = (result.user_status || "free").toLowerCase();
-            if (userStatus !== "pro" && !keyVal) {
-                showToast("Tài khoản Free bắt buộc nhập API Key!", "❌");
-                return;
+        if (!keyVal) {
+            showToast("Vui lòng nhập Gemini API Key!", "❌");
+            return;
+        }
+
+        chrome.storage.local.set({
+            gemini_api_key: keyVal,
+            gemini_model: modelVal,
+            gemini_target_lang: langVal,
+            gemini_tts_voice: voiceVal
+        }, () => {
+            showToast("Đã lưu cấu hình!", "✓");
+            settingsPanel.classList.remove("active");
+
+            // Gửi thông điệp reset trạng thái dịch trên content script để người dùng dịch lại theo cấu hình mới
+            if (activeTabId) {
+                chrome.tabs.sendMessage(activeTabId, { action: "RESET_TRANSLATION" }, () => {
+                    // Tải lại dữ liệu
+                    fetchTranscriptFromContent();
+                });
             }
-
-            chrome.storage.local.set({
-                gemini_api_key: keyVal,
-                gemini_model: modelVal,
-                gemini_target_lang: langVal,
-                gemini_tts_voice: voiceVal
-            }, () => {
-                showToast("Đã lưu cấu hình!", "✓");
-                settingsPanel.classList.remove("active");
-
-                // Gửi thông điệp reset trạng thái dịch trên content script để người dùng dịch lại theo cấu hình mới
-                if (activeTabId) {
-                    chrome.tabs.sendMessage(activeTabId, { action: "RESET_TRANSLATION" }, () => {
-                        // Tải lại dữ liệu
-                        fetchTranscriptFromContent();
-                    });
-                }
-            });
         });
     });
 
     const apiKeyInput = document.getElementById("api-key");
     if (apiKeyInput) {
         apiKeyInput.addEventListener("input", (e) => {
-            chrome.storage.local.get(["user_status"], (result) => {
-                updateApiKeyWarning(e.target.value.trim(), result.user_status);
-            });
+            updateApiKeyWarning(e.target.value.trim());
         });
     }
 
@@ -727,21 +651,13 @@ async function startTranslationWorkflow() {
     if (currentTranscript.length === 0) return;
 
     // Tải cấu hình API Key & Model mới nhất từ storage
-    chrome.storage.local.get(["gemini_api_key", "gemini_model", "gemini_target_lang", "firebase_id_token", "user_status"], async (result) => {
+    chrome.storage.local.get(["gemini_api_key", "gemini_model", "gemini_target_lang"], async (result) => {
         const apiKey = result.gemini_api_key ? result.gemini_api_key.trim() : DEFAULT_API_KEY;
         const model = result.gemini_model ? result.gemini_model.trim() : DEFAULT_MODEL;
         const targetLang = result.gemini_target_lang || "Tiếng Việt";
-        const idToken = result.firebase_id_token;
-        const userStatus = (result.user_status || "free").toLowerCase();
 
-        if (userStatus !== "pro" && !apiKey) {
-            showToast("Tài khoản Free bắt buộc phải cấu hình API Key!", "❌");
-            document.getElementById("settings-panel").classList.add("active");
-            return;
-        }
-
-        if (!apiKey && !idToken) {
-            showToast("Vui lòng Đăng nhập hoặc cấu hình API Key!", "❌");
+        if (!apiKey) {
+            showToast("Vui lòng cấu hình Gemini API Key!", "❌");
             document.getElementById("settings-panel").classList.add("active");
             return;
         }
@@ -870,27 +786,25 @@ async function startTranslationWorkflow() {
 }
 
 async function translateChunkWithGemini(chunk, apiKey, model, targetLang) {
-    const storage = await new Promise(res => chrome.storage.local.get(["firebase_id_token"], res));
-    const idToken = storage.firebase_id_token || "";
-
-    const response = await fetch(`${BACKEND_URL}/api/translate`, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ chunk, apiKey, model, targetLang, idToken })
+    return new Promise((resolve, reject) => {
+        chrome.runtime.sendMessage({
+            action: "TRANSLATE_TEXT",
+            chunk,
+            apiKey,
+            model,
+            targetLang
+        }, response => {
+            if (chrome.runtime.lastError) {
+                reject(new Error(chrome.runtime.lastError.message));
+            } else if (response && response.status === "error") {
+                reject(new Error(response.message));
+            } else if (response && response.status === "success") {
+                resolve(response.data);
+            } else {
+                reject(new Error("Unknown response from background script"));
+            }
+        });
     });
-
-    if (!response.ok) {
-        let errMsg = `HTTP Error ${response.status}`;
-        try {
-            const errData = await response.json();
-            if (errData && errData.error) errMsg = errData.error;
-        } catch (e) {}
-        throw new Error(errMsg);
-    }
-
-    return await response.json();
 }
 
 // Sao chép phụ đề vào Clipboard dựa theo chế độ hiển thị hiện tại
@@ -1019,439 +933,19 @@ function showToast(message, icon = "✓") {
     }, 2500);
 }
 
-// --- LOGIC XÁC THỰC VÀ ĐỒNG BỘ HÓA FIREBASE (REST API) ---
-
-function initAuthUI() {
-    const googleLoginBtn = document.getElementById("btn-google-login");
-    const logoutBtn = document.getElementById("btn-logout");
-
-    if (googleLoginBtn) {
-        googleLoginBtn.addEventListener("click", () => handleLogin(true));
-    }
-
-    if (logoutBtn) {
-        logoutBtn.addEventListener("click", handleLogout);
-    }
-}
-
-function showLoginOverlay() {
-    const overlay = document.getElementById("login-overlay");
-    if (overlay) overlay.classList.add("active");
-}
-
-function hideLoginOverlay() {
-    const overlay = document.getElementById("login-overlay");
-    if (overlay) overlay.classList.remove("active");
-}
-
-// Cập nhật giao diện thông tin người dùng
-function updateProfileUI(user) {
-    const nameEl = document.getElementById("user-name");
-    const avatarEl = document.getElementById("user-avatar");
-    const badgeEl = document.getElementById("user-status-badge");
-
-    if (nameEl) nameEl.innerText = user.displayName || user.email || "Thành viên";
-    if (avatarEl && user.photoUrl) avatarEl.src = user.photoUrl;
-    if (badgeEl) {
-        badgeEl.innerText = (user.status || "free").toUpperCase();
-        if (user.status === "pro") {
-            badgeEl.className = "user-status-badge pro";
-        } else {
-            badgeEl.className = "user-status-badge";
-        }
-    }
-
-    // Cập nhật cảnh báo API Key
-    const apiKey = document.getElementById("api-key").value.trim();
-    updateApiKeyWarning(apiKey, user.status);
-}
-
-// Cảnh báo khi tài khoản Free chưa cấu hình API Key
-function updateApiKeyWarning(apiKey, status) {
+// Cảnh báo khi chưa cấu hình API Key
+function updateApiKeyWarning(apiKey) {
     const warningEl = document.getElementById("api-key-warning");
     const apiKeyInput = document.getElementById("api-key");
     if (!warningEl || !apiKeyInput) return;
 
-    const userStatus = (status || "free").toLowerCase();
-
-    if (userStatus !== "pro") {
-        apiKeyInput.placeholder = "Bắt buộc nhập API Key cá nhân cho gói Free";
-        if (!apiKey) {
-            warningEl.style.display = "block";
-            warningEl.innerHTML = "⚠️ Gói Free bắt buộc phải tự điền API Key cá nhân để sử dụng dịch vụ.";
-            apiKeyInput.style.borderColor = "var(--warning)";
-        } else {
-            warningEl.style.display = "none";
-            apiKeyInput.style.borderColor = "";
-        }
+    apiKeyInput.placeholder = "Nhập Gemini API Key của bạn";
+    if (!apiKey) {
+        warningEl.style.display = "block";
+        warningEl.innerHTML = "⚠️ Vui lòng nhập Gemini API Key cá nhân để sử dụng dịch vụ.";
+        apiKeyInput.style.borderColor = "var(--warning)";
     } else {
-        apiKeyInput.placeholder = "Nhập API Key tự chọn (để trống sẽ dùng mặc định)";
         warningEl.style.display = "none";
         apiKeyInput.style.borderColor = "";
     }
-}
-
-// Kiểm tra trạng thái đăng nhập thực tế của người dùng từ Storage
-async function checkAuthStatus() {
-    return new Promise((resolve) => {
-        chrome.storage.local.get([
-            "user_uid",
-            "user_email",
-            "user_display_name",
-            "user_photo_url",
-            "user_status",
-            "firebase_id_token",
-            "firebase_token_expires_at"
-        ], (result) => {
-            const token = result.firebase_id_token;
-            const expiresAt = result.firebase_token_expires_at;
-            
-            // Nếu token còn hiệu lực (và còn nhiều hơn 5 phút)
-            if (token && expiresAt && (expiresAt - Date.now() > 5 * 60 * 1000)) {
-                const user = {
-                    uid: result.user_uid,
-                    email: result.user_email,
-                    displayName: result.user_display_name,
-                    photoUrl: result.user_photo_url,
-                    status: result.user_status
-                };
-                updateProfileUI(user);
-                
-                // Tự động đồng bộ trạng thái mới nhất từ Firestore (để cập nhật gói Free/Pro từ Admin)
-                syncUserStatusFromFirestore(result.user_uid, token);
-                
-                resolve(true);
-            } else if (token) {
-                // Token đã hết hạn hoặc sắp hết hạn, thử gửi message nhờ background script làm mới
-                console.log("[XT-Popup] Token đã hết hạn hoặc sắp hết hạn. Đang gọi background làm mới...");
-                chrome.runtime.sendMessage({ action: "GET_OR_REFRESH_TOKEN" }, (response) => {
-                    if (chrome.runtime.lastError) {
-                        console.warn("[XT-Popup] Lỗi giao tiếp với background script:", chrome.runtime.lastError.message);
-                        resolve(false);
-                        return;
-                    }
-                    
-                    if (response && response.status === "success" && response.idToken) {
-                        // Sau khi background làm mới thành công, lấy lại dữ liệu mới nhất từ storage để cập nhật UI
-                        chrome.storage.local.get([
-                            "user_uid",
-                            "user_email",
-                            "user_display_name",
-                            "user_photo_url",
-                            "user_status"
-                        ], (updatedResult) => {
-                            const user = {
-                                uid: updatedResult.user_uid,
-                                email: updatedResult.user_email,
-                                displayName: updatedResult.user_display_name,
-                                photoUrl: updatedResult.user_photo_url,
-                                status: updatedResult.user_status
-                            };
-                            updateProfileUI(user);
-                            
-                            // Đồng bộ trạng thái từ Firestore bằng token mới
-                            syncUserStatusFromFirestore(updatedResult.user_uid, response.idToken);
-                            resolve(true);
-                        });
-                    } else {
-                        console.log("[XT-Popup] Background không thể làm mới token.");
-                        resolve(false);
-                    }
-                });
-            } else {
-                resolve(false);
-            }
-        });
-    });
-}
-
-// Đồng bộ trạng thái của user từ Firestore REST API
-async function syncUserStatusFromFirestore(uid, idToken) {
-    if (FIREBASE_PROJECT_ID === "YOUR_FIREBASE_PROJECT_ID" || FIREBASE_API_KEY === "YOUR_FIREBASE_API_KEY") {
-        console.warn("Chưa cấu hình Firebase Project ID / API Key. Bỏ qua đồng bộ.");
-        return;
-    }
-
-    try {
-        const url = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/users/${uid}`;
-        const response = await fetch(url, {
-            headers: {
-                "Authorization": `Bearer ${idToken}`
-            }
-        });
-
-        if (response.status === 200) {
-            const data = await response.json();
-            const fields = data.fields;
-            const status = fields.status && fields.status.stringValue ? fields.status.stringValue : "free";
-
-            chrome.storage.local.set({ user_status: status }, () => {
-                const badgeEl = document.getElementById("user-status-badge");
-                if (badgeEl) {
-                    badgeEl.innerText = status.toUpperCase();
-                    if (status === "pro") {
-                        badgeEl.className = "user-status-badge pro";
-                    } else {
-                        badgeEl.className = "user-status-badge";
-                    }
-                }
-                updateUdemyProUI(status);
-            });
-        }
-    } catch (e) {
-        console.error("Lỗi đồng bộ Firestore REST API:", e);
-    }
-}
-
-// Xử lý logic Đăng nhập / Refresh
-async function handleLogin(interactive = true) {
-    return new Promise((resolve) => {
-        // Chế độ đăng nhập OAuth thực tế qua Google/Firebase
-        const ENABLE_QUICK_LOGIN = false;
-        if (ENABLE_QUICK_LOGIN || FIREBASE_PROJECT_ID === "YOUR_FIREBASE_PROJECT_ID" || FIREBASE_API_KEY === "YOUR_FIREBASE_API_KEY") {
-            console.log("[XT-Auth] Kích hoạt Đăng nhập 1-Click thành công!");
-            const mockUser = {
-                uid: "user_ledanvnn",
-                email: "ledanvnn@gmail.com",
-                displayName: "Lê Dần (PRO Admin)",
-                photoUrl: "icon/64x64.png",
-                status: "pro"
-            };
-            chrome.storage.local.set({
-                user_uid: mockUser.uid,
-                user_email: mockUser.email,
-                user_display_name: mockUser.displayName,
-                user_photo_url: mockUser.photoUrl,
-                user_status: mockUser.status,
-                firebase_id_token: "mock_id_token",
-                firebase_refresh_token: "mock_refresh_token",
-                firebase_token_expires_at: Date.now() + 365 * 24 * 3600 * 1000
-            }, () => {
-                updateProfileUI(mockUser);
-                showToast("Đăng nhập tài khoản PRO thành công!", "🎉");
-                if (interactive) {
-                    initApplication().then(() => resolve(true));
-                } else {
-                    resolve(true);
-                }
-            });
-            return;
-        }
-
-        if (GOOGLE_CLIENT_ID_WEB === "YOUR_GOOGLE_CLIENT_ID_WEB") {
-            console.warn("Chưa cấu hình GOOGLE_CLIENT_ID_WEB trong popup.js!");
-            showToast("Vui lòng cấu hình Web Client ID!", "⚠️");
-            resolve(false);
-            return;
-        }
-
-        // Thử lấy token qua Chrome Native Identity getAuthToken trước
-        chrome.identity.getAuthToken({ interactive: interactive }, async (nativeToken) => {
-            let googleToken = nativeToken;
-
-            if (chrome.runtime.lastError || !googleToken) {
-                console.log("[XT-Auth] getAuthToken không thành công, chuyển sang launchWebAuthFlow...", chrome.runtime.lastError?.message);
-                
-                const redirectUri = chrome.identity.getRedirectURL();
-                const authUrl = `https://accounts.google.com/o/oauth2/v2/auth` +
-                                `?client_id=${GOOGLE_CLIENT_ID_WEB}` +
-                                `&response_type=token` +
-                                `&redirect_uri=${encodeURIComponent(redirectUri)}` +
-                                `&scope=${encodeURIComponent("https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile")}`;
-
-                googleToken = await new Promise((resWebFlow) => {
-                    chrome.identity.launchWebAuthFlow({
-                        url: authUrl,
-                        interactive: interactive
-                    }, (redirectUrl) => {
-                        if (chrome.runtime.lastError || !redirectUrl) {
-                            console.warn("Lỗi Google Auth (launchWebAuthFlow):", chrome.runtime.lastError?.message);
-                            resWebFlow(null);
-                            return;
-                        }
-
-                        try {
-                            const url = new URL(redirectUrl);
-                            const params = new URLSearchParams(url.hash.substring(1));
-                            resWebFlow(params.get("access_token"));
-                        } catch (e) {
-                            console.error("Lỗi phân tích redirect URL:", e);
-                            resWebFlow(null);
-                        }
-                    });
-                });
-            }
-
-            if (!googleToken) {
-                resolve(false);
-                return;
-            }
-
-            try {
-                // 1. Đổi Google Token lấy Firebase ID Token
-                const authUrl = `https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=${FIREBASE_API_KEY}`;
-                const authResponse = await fetch(authUrl, {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json"
-                    },
-                    body: JSON.stringify({
-                        postBody: `access_token=${googleToken}&providerId=google.com`,
-                        requestUri: "http://localhost",
-                        returnIdpCredential: true,
-                        returnSecureToken: true
-                    })
-                });
-
-                if (!authResponse.ok) {
-                    throw new Error(`Đăng nhập Firebase REST API thất bại: ${authResponse.status}`);
-                }
-
-                const authData = await authResponse.json();
-                const idToken = authData.idToken;
-                const uid = authData.localId;
-                const email = authData.email;
-                const displayName = authData.displayName || email.split("@")[0];
-                const photoUrl = authData.photoUrl || "icon/64x64.png";
-                const expiresAt = Date.now() + parseInt(authData.expiresIn) * 1000;
-
-                // 2. Kiểm tra/Tạo/Cập nhật document của user trong Firestore
-                const docUrl = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/users/${uid}`;
-                const getDocResponse = await fetch(docUrl, {
-                    headers: {
-                        "Authorization": `Bearer ${idToken}`
-                    }
-                });
-
-                let userStatus = "free";
-                const nowIso = new Date().toISOString();
-
-                if (getDocResponse.status === 404) {
-                    // Người dùng mới: Tạo mới tài liệu Firestore
-                    const createData = {
-                        fields: {
-                            email: { stringValue: email },
-                            displayName: { stringValue: displayName },
-                            photoUrl: { stringValue: photoUrl },
-                            status: { stringValue: "free" },
-                            role: { stringValue: "user" },
-                            createdAt: { timestampValue: nowIso },
-                            lastLogin: { timestampValue: nowIso }
-                        }
-                    };
-
-                    await fetch(docUrl, {
-                        method: "PATCH",
-                        headers: {
-                            "Authorization": `Bearer ${idToken}`,
-                            "Content-Type": "application/json"
-                        },
-                        body: JSON.stringify(createData)
-                    });
-
-                    userStatus = "free";
-                } else if (getDocResponse.status === 200) {
-                    // Người dùng cũ: Đọc trạng thái hiện tại và cập nhật thời gian đăng nhập
-                    const docData = await getDocResponse.json();
-                    const fields = docData.fields;
-                    userStatus = fields.status && fields.status.stringValue ? fields.status.stringValue : "free";
-
-                    // Nếu tài khoản bị chặn bởi Admin
-                    if (userStatus === "blocked") {
-                        showToast("Tài khoản của bạn đã bị khóa bởi Admin!", "❌");
-                        fetch(`https://oauth2.googleapis.com/revoke?token=${googleToken}`, { method: "POST" })
-                            .catch(e => console.warn("Lỗi thu hồi token của tài khoản bị khóa:", e));
-                        resolve(false);
-                        return;
-                    }
-
-                    const updateData = {
-                        fields: {
-                            email: { stringValue: email },
-                            displayName: { stringValue: displayName },
-                            photoUrl: { stringValue: photoUrl },
-                            lastLogin: { timestampValue: nowIso }
-                        }
-                    };
-
-                    await fetch(`${docUrl}?updateMask.fieldPaths=email&updateMask.fieldPaths=displayName&updateMask.fieldPaths=photoUrl&updateMask.fieldPaths=lastLogin`, {
-                        method: "PATCH",
-                        headers: {
-                            "Authorization": `Bearer ${idToken}`,
-                            "Content-Type": "application/json"
-                        },
-                        body: JSON.stringify(updateData)
-                    });
-                } else {
-                    throw new Error(`Firestore REST API GET trả về status: ${getDocResponse.status}`);
-                }
-
-                // 3. Lưu thông tin người dùng vào storage
-                const loggedInUser = {
-                    uid,
-                    email,
-                    displayName,
-                    photoUrl,
-                    status: userStatus
-                };
-
-                chrome.storage.local.set({
-                    user_uid: uid,
-                    user_email: email,
-                    user_display_name: displayName,
-                    user_photo_url: photoUrl,
-                    user_status: userStatus,
-                    firebase_id_token: idToken,
-                    firebase_refresh_token: authData.refreshToken,
-                    firebase_token_expires_at: expiresAt,
-                    google_access_token: googleToken
-                }, () => {
-                    updateProfileUI(loggedInUser);
-                    if (interactive) {
-                        initApplication().then(() => resolve(true));
-                    } else {
-                        resolve(true);
-                    }
-                });
-
-            } catch (err) {
-                console.error("Lỗi xảy ra trong Auth Firebase REST API:", err);
-                showToast("Lỗi kết nối xác thực!", "❌");
-                resolve(false);
-            }
-        });
-    });
-}
-
-// Xử lý Đăng xuất
-function handleLogout() {
-    chrome.storage.local.get(["firebase_id_token", "google_access_token"], (result) => {
-        const token = result.firebase_id_token;
-        const googleToken = result.google_access_token;
-
-        if (googleToken) {
-            fetch(`https://oauth2.googleapis.com/revoke?token=${googleToken}`, { method: "POST" })
-                .then(() => console.log("Đã thu hồi Google Auth Token thành công"))
-                .catch(err => console.warn("Lỗi thu hồi Google Auth Token:", err));
-        }
-
-        chrome.storage.local.remove([
-            "user_uid",
-            "user_email",
-            "user_display_name",
-            "user_photo_url",
-            "user_status",
-            "firebase_id_token",
-            "firebase_refresh_token",
-            "firebase_token_expires_at",
-            "google_access_token"
-        ], () => {
-            showToast("Đã đăng xuất tài khoản!", "👋");
-            showLoginOverlay();
-
-            setTimeout(() => {
-                window.location.reload();
-            }, 800);
-        });
-    });
 }

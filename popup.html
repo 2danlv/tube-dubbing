@@ -588,160 +588,6 @@
       opacity: 1;
     }
 
-    /* Login Overlay Styling */
-    .login-overlay {
-      position: absolute;
-      top: 0; left: 0; right: 0; bottom: 0;
-      background-color: rgba(13, 13, 18, 0.96);
-      z-index: 3000;
-      display: none; /* Hiển thị động bằng js */
-      align-items: center;
-      justify-content: center;
-      padding: 20px;
-    }
-
-    .login-overlay.active {
-      display: flex;
-    }
-
-    .login-card {
-      background-color: var(--card-bg);
-      border: 1px solid var(--border-color);
-      border-radius: 14px;
-      padding: 28px 24px;
-      width: 100%;
-      max-width: 300px;
-      text-align: center;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.6);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 14px;
-    }
-
-    .login-logo {
-      font-family: var(--font-title);
-      font-size: 24px;
-      font-weight: 700;
-      background: var(--primary-gradient);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      padding: 4px 14px;
-      border: 1px solid var(--border-color);
-      border-radius: 8px;
-      box-shadow: 0 0 15px rgba(124, 58, 237, 0.35);
-    }
-
-    .login-card h2 {
-      margin: 8px 0 0 0;
-      font-family: var(--font-title);
-      font-size: 19px;
-      font-weight: 600;
-    }
-
-    .login-card p {
-      font-size: 12px;
-      color: var(--text-muted);
-      line-height: 1.6;
-      margin: 0 0 10px 0;
-    }
-
-    .btn-google-login {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      background-color: white;
-      color: #1f2937;
-      border: none;
-      padding: 10px 16px;
-      border-radius: 6px;
-      font-weight: 600;
-      font-family: var(--font-body);
-      font-size: 13.5px;
-      cursor: pointer;
-      width: 100%;
-      transition: all 0.2s;
-      box-shadow: 0 4px 10px rgba(0,0,0,0.25);
-    }
-
-    .btn-google-login:hover {
-      background-color: #f3f4f6;
-      transform: translateY(-1px);
-      box-shadow: 0 4px 14px rgba(0,0,0,0.35);
-    }
-
-    .btn-google-login:active {
-      transform: translateY(0);
-    }
-
-    /* User profile card */
-    .user-profile-card {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 4px 0 8px 0;
-    }
-
-    .user-avatar {
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
-      border: 1px solid var(--border-color);
-      background-color: var(--input-bg);
-    }
-
-    .user-details {
-      display: flex;
-      flex-direction: column;
-      flex: 1;
-      gap: 2px;
-    }
-
-    .user-name {
-      font-size: 12.5px;
-      font-weight: 600;
-      color: var(--text-main);
-      max-width: 180px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .user-status-badge {
-      font-size: 9px;
-      font-weight: 700;
-      padding: 1px 6px;
-      border-radius: 10px;
-      align-self: flex-start;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-      color: white;
-    }
-
-    .user-status-badge.pro {
-      background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-      box-shadow: 0 0 8px rgba(245, 158, 11, 0.4);
-    }
-
-    .btn-logout {
-      background: transparent;
-      border: none;
-      color: var(--text-muted);
-      cursor: pointer;
-      padding: 6px;
-      border-radius: 6px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: all 0.2s;
-    }
-
-    .btn-logout:hover {
-      color: var(--error);
-      background-color: rgba(239, 68, 68, 0.1);
-    }
-
     .api-key-warning-text {
       font-size: 11px;
       color: var(--warning);
@@ -773,22 +619,6 @@
 
     <!-- Settings Panel (Collapsible) -->
     <div class="settings-panel" id="settings-panel">
-      <!-- User Profile Info -->
-      <div class="user-profile-card" id="user-profile-card">
-        <img class="user-avatar" id="user-avatar" src="icon/64x64.png" alt="Avatar">
-        <div class="user-details">
-          <span class="user-name" id="user-name">Đang tải...</span>
-          <span class="user-status-badge" id="user-status-badge">Free</span>
-        </div>
-        <button class="btn-logout" id="btn-logout" title="Đăng xuất">
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-            <path fill-rule="evenodd" d="M6 12.5a.5.5 0 0 0 .5.5h8a.5.5 0 0 0 .5-.5v-9a.5.5 0 0 0-.5-.5h-8a.5.5 0 0 0-.5.5v2a.5.5 0 0 1-1 0v-2A1.5 1.5 0 0 1 6.5 2h8A1.5 1.5 0 0 1 16 3.5v9a1.5 1.5 0 0 1-1.5 1.5h-8A1.5 1.5 0 0 1 5 12.5v-2a.5.5 0 0 1 1 0v2z"/>
-            <path fill-rule="evenodd" d="M.146 8.354a.5.5 0 0 1 0-.708l3-3a.5.5 0 1 1 .708.708L1.707 7.5H10.5a.5.5 0 0 1 0 1H1.707l2.147 2.146a.5.5 0 0 1-.708.708l-3-3z"/>
-          </svg>
-        </button>
-      </div>
-      <div style="height: 1px; background-color: var(--border-color); margin: 4px 0 8px 0;"></div>
-
       <div class="form-group">
         <label for="api-key">Gemini API Key</label>
         <input type="password" id="api-key" class="input-field" placeholder="Nhập Gemini API Key của bạn">
@@ -819,9 +649,6 @@
 
     <!-- Control Actions Panel -->
     <div class="controls-panel">
-      <div id="udemy-pro-warning" style="display: none; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); color: #fca5a5; padding: 10px; border-radius: 8px; font-size: 12px; margin-bottom: 12px; text-align: center; font-weight: 500; font-family: 'Inter', sans-serif; line-height: 1.4;">
-        ⚠️ Tính năng lồng tiếng trên Udemy chỉ dành cho thành viên PRO. Vui lòng nâng cấp tài khoản!
-      </div>
       <button class="btn-translate" id="btn-translate-action">
         <!-- Translate Icon -->
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
@@ -899,24 +726,6 @@
           <span class="empty-text">Đang kết nối và tải dữ liệu thoại từ video YouTube...<br>Xin hãy chắc chắn bạn đang ở trang phát video.</span>
         </div>
       </div>
-    </div>
-  </div>
-
-  <!-- Login Overlay -->
-  <div class="login-overlay" id="login-overlay">
-    <div class="login-card">
-      <div class="login-logo">AI</div>
-      <h2>Tube - Translate & Dub</h2>
-      <p>Vui lòng đăng nhập bằng tài khoản Google để sử dụng các tính năng của tiện ích mở rộng.</p>
-      <button class="btn-google-login" id="btn-google-login">
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 48 48" style="margin-right: 8px;">
-          <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
-          <path fill="#4285F4" d="M46.5 24c0-1.55-.15-3.24-.47-4.77H24v9.03h12.75c-.55 2.87-2.17 5.31-4.61 6.94l7.19 5.57c4.21-3.88 6.67-9.59 6.67-16.77z"/>
-          <path fill="#FBBC05" d="M10.54 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.98-6.19z"/>
-          <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.19-5.57c-1.99 1.34-4.51 2.13-7.7 2.13-6.26 0-11.57-4.22-13.46-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
-        </svg>
-        <span>Đăng nhập với Google</span>
-      </button>
     </div>
   </div>
 

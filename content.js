@@ -79,7 +79,6 @@ window.addEventListener('message', function (event) {
 
 
 // Cấu hình mặc định
-const BACKEND_URL = "http://localhost:3000"; // Thay thế bằng URL Backend Production của bạn khi deploy
 const DEFAULT_API_KEY = "";
 const DEFAULT_MODEL = "gemini-3.5-flash-lite";
 const BLOCK_DURATION = 60; // Khối 1 phút (60 giây) để tối ưu tốc độ lồng tiếng
@@ -437,31 +436,12 @@ async function handleVideoTranslateClick() {
     }
 
     // 3. Tải cấu hình API Key & Model
-    chrome.storage.local.get(["gemini_api_key", "gemini_model", "gemini_target_lang", "firebase_id_token", "user_status"], async (result) => {
+    chrome.storage.local.get(["gemini_api_key", "gemini_model", "gemini_target_lang"], async (result) => {
         const apiKey = result.gemini_api_key ? result.gemini_api_key.trim() : DEFAULT_API_KEY;
         const model = result.gemini_model ? result.gemini_model.trim() : DEFAULT_MODEL;
         const targetLang = result.gemini_target_lang || "Tiếng Việt";
-        const idToken = result.firebase_id_token;
-        const userStatus = (result.user_status || "free").toLowerCase();
 
-        if (userStatus !== "pro" && !apiKey) {
-            transBtn.classList.remove('translating');
-            updateVideoButtonState(transBtn, targetLang);
-            if (subOverlay) {
-                subOverlay.innerText = "⚠️ Tài khoản Free bắt buộc phải tự cấu hình Gemini API Key cá nhân! Vui lòng nhấp vào biểu tượng icon Tube ở góc trên trình duyệt để nhập API Key.";
-                subOverlay.style.display = 'block';
-
-                // Tự động ẩn thông báo sau 8 giây
-                setTimeout(() => {
-                    if (subOverlay.innerText.includes("bắt buộc phải tự cấu hình Gemini API Key")) {
-                        subOverlay.style.display = 'none';
-                    }
-                }, 8000);
-            }
-            return;
-        }
-
-        if (!apiKey && !idToken) {
+        if (!apiKey) {
             transBtn.classList.remove('translating');
             updateVideoButtonState(transBtn, targetLang);
             if (subOverlay) {
@@ -655,17 +635,13 @@ async function translateBlock(blockIdx, apiKey, model, targetLang) {
 
 // Gửi yêu cầu dịch qua Background Script để tránh lỗi Local Network Access của Chrome trên YouTube
 async function callGeminiAPI(chunk, apiKey, model, targetLang) {
-    const storage = await new Promise(res => chrome.storage.local.get(["firebase_id_token"], res));
-    const idToken = storage.firebase_id_token || "";
-
     return new Promise((resolve, reject) => {
         chrome.runtime.sendMessage({
             action: "TRANSLATE_TEXT",
             chunk,
             apiKey,
             model,
-            targetLang,
-            idToken
+            targetLang
         }, response => {
             if (chrome.runtime.lastError) {
                 reject(new Error(chrome.runtime.lastError.message));

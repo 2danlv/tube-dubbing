@@ -1,101 +1,12 @@
 // --- MSTranslatorAndroidApp Edge TTS Client logic ---
-const BACKEND_URL = "https://api-tko3zgrl6a-as.a.run.app"; // Thay thế bằng URL Backend Production của bạn khi deploy
 
-// Dọn dẹp Alibaba API Key mặc định cũ khỏi storage để chuyển sang sử dụng backend bảo mật
+// Dọn dẹp Alibaba API Key mặc định cũ khỏi storage (không còn dùng)
 chrome.storage.local.get(["aliyun_asr_api_key"], (result) => {
     const oldDefaultKey = "sk-ws-H.IIYHED.JP5J.MEYCIQC_KSrmw6DFwfsZXFpE1K-00QvVr1hchjy0_bhxbDJbBAIhALDWAhDhjm9oR64hrt5C6IhN4BeXkL4kVI3j-noWO-zC";
     if (result.aliyun_asr_api_key === oldDefaultKey) {
         chrome.storage.local.remove("aliyun_asr_api_key");
     }
 });
-
-const FIREBASE_API_KEY = "AIzaSyDG97T6_74DlRzG33JIp31qgOFUto_pl-A";
-const FIREBASE_PROJECT_ID = "tube-dubbing-auth";
-
-async function getOrRefreshIdToken() {
-    return new Promise((resolve) => {
-        chrome.storage.local.get([
-            "firebase_id_token",
-            "firebase_refresh_token",
-            "firebase_token_expires_at"
-        ], async (result) => {
-            const token = result.firebase_id_token;
-            const refreshToken = result.firebase_refresh_token;
-            const expiresAt = result.firebase_token_expires_at;
-
-            if (!token) {
-                console.log("[XT-Background] Không tìm thấy firebase_id_token trong storage.");
-                resolve(null);
-                return;
-            }
-
-            // Trường hợp chế độ demo
-            if (FIREBASE_PROJECT_ID === "YOUR_FIREBASE_PROJECT_ID" || FIREBASE_API_KEY === "YOUR_FIREBASE_API_KEY") {
-                console.log("[XT-Background] Đang ở chế độ demo. Tự động gia hạn mock token.");
-                const newExpiresAt = Date.now() + 3600 * 1000;
-                chrome.storage.local.set({
-                    firebase_token_expires_at: newExpiresAt
-                });
-                resolve("mock_id_token");
-                return;
-            }
-
-            // Kiểm tra xem token còn hạn không (safety margin 5 phút)
-            const isTokenValid = expiresAt && (expiresAt - Date.now() > 5 * 60 * 1000);
-            if (isTokenValid) {
-                console.log("[XT-Background] Sử dụng firebase_id_token hiện tại còn hạn.");
-                resolve(token);
-                return;
-            }
-
-            // Token đã hết hạn hoặc sắp hết hạn. Thử refresh nếu có refresh token
-            if (refreshToken) {
-                console.log("[XT-Background] Token đã hết hạn. Đang tiến hành làm mới qua refresh token...");
-                try {
-                    const url = `https://securetoken.googleapis.com/v1/token?key=${FIREBASE_API_KEY}`;
-                    const response = await fetch(url, {
-                        method: "POST",
-                        headers: {
-                            "Content-Type": "application/x-www-form-urlencoded"
-                        },
-                        body: `grant_type=refresh_token&refresh_token=${refreshToken}`
-                    });
-
-                    if (response.ok) {
-                        const data = await response.json();
-                        const newIdToken = data.id_token;
-                        const newRefreshToken = data.refresh_token;
-                        const expiresIn = parseInt(data.expires_in);
-                        const newExpiresAt = Date.now() + expiresIn * 1000;
-
-                        chrome.storage.local.set({
-                            firebase_id_token: newIdToken,
-                            firebase_refresh_token: newRefreshToken,
-                            firebase_token_expires_at: newExpiresAt
-                        });
-
-                        console.log("[XT-Background] Làm mới Firebase token thành công.");
-                        resolve(newIdToken);
-                        return;
-                    } else {
-                        console.error("[XT-Background] Lỗi từ API SecureToken khi refresh:", response.status);
-                        resolve(null);
-                        return;
-                    }
-                } catch (e) {
-                    console.error("[XT-Background] Lỗi kết nối khi refresh token:", e);
-                    resolve(null);
-                    return;
-                }
-            } else {
-                console.log("[XT-Background] Token hết hạn và không tìm thấy refresh token để làm mới.");
-                resolve(null);
-                return;
-            }
-        });
-    });
-}
-
 
 function base64ToBytes(base64) {
     const binaryString = atob(base64);
@@ -482,116 +393,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 sendResponse({ status: "error", message: error.message });
             });
         return true; // Giữ kênh tin nhắn mở để xử lý bất đồng bộ
-    } else if (message.action === "GET_OR_REFRESH_TOKEN") {
-        getOrRefreshIdToken().then(token => {
-            if (token) {
-                sendResponse({ status: "success", idToken: token });
-            } else {
-                sendResponse({ status: "error", message: "Không thể lấy hoặc làm mới token." });
-            }
-        });
-        return true; // Giữ kênh tin nhắn mở để xử lý bất đồng bộ
     } else if (message.action === "TRANSLATE_TEXT") {
-        const { chunk, apiKey, model, targetLang, idToken } = message;
-        
+        const { chunk, apiKey, model, targetLang } = message;
+
         (async () => {
-            const DEFAULT_GEMINI_KEY = "AIzaSyBa6keBIph3DzOCiB5ykEI3HOjV0R1037U";
-            const effectiveKey = (apiKey && apiKey.trim() !== "") ? apiKey.trim() : DEFAULT_GEMINI_KEY;
-            let directGeminiErrorMsg = "";
-
-            try {
-                console.log("[XT-Background] Đang dịch trực tiếp qua Gemini API...");
-                const data = await translateDirectWithGeminiKey(chunk, effectiveKey, model, targetLang);
-                sendResponse({ status: "success", data });
+            const cleanKey = (apiKey || "").trim();
+            if (!cleanKey) {
+                sendResponse({ status: "error", message: "Chưa cấu hình Gemini API Key. Vui lòng nhập API Key trong phần Cài đặt." });
                 return;
-            } catch (err) {
-                directGeminiErrorMsg = err.message || String(err);
-                console.error("[XT-Background] Dịch trực tiếp qua Gemini Key thất bại, thử qua Backend:", err);
-            }
-
-            let activeToken = idToken || "";
-            if (!activeToken) {
-                activeToken = await getOrRefreshIdToken();
             }
 
             try {
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 15000);
-
-                const response = await fetch(`${BACKEND_URL}/api/translate`, {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json"
-                    },
-                    body: JSON.stringify({ chunk, apiKey, model, targetLang, idToken: activeToken }),
-                    signal: controller.signal
-                });
-                clearTimeout(timeoutId);
-
-                if (!response.ok) {
-                    const text = await response.text();
-                    let errMsg = `HTTP status: ${response.status}`;
-                    try {
-                        const errJson = JSON.parse(text);
-                        if (errJson && errJson.error) errMsg = errJson.error;
-                    } catch (e) {}
-                    throw new Error(errMsg);
-                }
-
-                const data = await response.json();
+                console.log("[XT-Background] Đang dịch qua Gemini API...");
+                const data = await translateDirectWithGeminiKey(chunk, cleanKey, model, targetLang);
                 sendResponse({ status: "success", data });
-            } catch (error) {
-                console.error("[XT-Background] Lỗi khi dịch thuật:", error);
-                sendResponse({
-                    status: "error",
-                    message: `Dịch trực tiếp Gemini lỗi: ${directGeminiErrorMsg || "?"}. Dịch qua Backend lỗi: ${error.message}`
-                });
+            } catch (err) {
+                console.error("[XT-Background] Lỗi khi dịch qua Gemini API:", err);
+                sendResponse({ status: "error", message: err.message || String(err) });
             }
         })();
         return true; // Giữ kênh tin nhắn mở để xử lý bất đồng bộ
-    } else if (message.action === "TRANSCRIBE_DOUYIN_VIDEO") {
-        const { videoUrl, audioUrl, apiKey } = message;
-        
-        (async () => {
-            let activeToken = "";
-            if (!apiKey) {
-                activeToken = await getOrRefreshIdToken();
-                if (!activeToken) {
-                    sendResponse({ 
-                        status: "error", 
-                        message: "Phiên đăng nhập đã hết hạn hoặc chưa đăng nhập. Vui lòng click vào biểu tượng tiện ích Tube ở góc trên trình duyệt để đăng nhập lại!" 
-                    });
-                    return;
-                }
-            }
-
-            try {
-                console.log("[XT-Background] Requesting transcription from backend for URL:", audioUrl || videoUrl);
-                const response = await fetch(`${BACKEND_URL}/api/transcribe`, {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json"
-                    },
-                    body: JSON.stringify({ videoUrl, audioUrl, apiKey, idToken: activeToken })
-                });
-
-                if (!response.ok) {
-                    const text = await response.text();
-                    let errMsg = `HTTP status: ${response.status}`;
-                    try {
-                        const errJson = JSON.parse(text);
-                        if (errJson && errJson.error) errMsg = errJson.error;
-                    } catch (e) {}
-                    throw new Error(errMsg);
-                }
-
-                const data = await response.json();
-                sendResponse({ status: "success", data });
-            } catch (error) {
-                console.error("[XT-Background] Lỗi khi nhận diện giọng nói qua backend:", error);
-                sendResponse({ status: "error", message: error.message });
-            }
-        })();
-        return true; // Keep message channel open
     }
 });
