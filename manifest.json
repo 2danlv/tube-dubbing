@@ -20,16 +20,14 @@
       "run_at": "document_start",
       "world": "MAIN"
    } ],
-   "declarative_net_request": {
-      "rule_resources": [ {
-         "enabled": true,
-         "id": "ruleset_1",
-         "path": "rules.json"
-      } ]
-   },
    "default_locale": "vi",
    "description": "__MSG_extensionDescription__",
-   "host_permissions": [ "<all_urls>" ],
+   "host_permissions": [
+      "https://*.youtube.com/*",
+      "https://generativelanguage.googleapis.com/*",
+      "https://dev.microsofttranslator.com/*",
+      "https://*.tts.speech.microsoft.com/*"
+   ],
    "icons": {
       "16": "icon/16x16.png",
       "32": "icon/32x32.png",
@@ -38,6 +36,6 @@
    "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAjdMBOcjoo/WIWTfvSOxkZY8mevkPsIXuvqVoYMopMlENsf4UO7R5OkjHhC9oDPiNhgbMdSWGojdfiT6bVKqg843Eatm5FLwsSvWHw8IL5on0B/SllQjWsRl4JgSSxngfV4H4ZAst2DNQpM5tRWNI9jeYMafDQCUYSxXLD9PiiB2IOd6HaZRtiOvUrTghSZzzHxK7gWY/8H5QGUEaWuPK1IrBaUm7DpdNkVhfdLrGQNCn4AkafpnEP7vY3um+CkxGpl6GgTMyDaiX0tdqOhyhMFtAAa2UFVBgejweCsT0TrUJl/skII7PjezLHNO+0hjCHHsvy39JFJcOQr+ovyTW6QIDAQAB",
    "manifest_version": 3,
    "name": "__MSG_extensionName__",
-   "permissions": [ "activeTab", "storage", "declarativeNetRequest" ],
+   "permissions": [ "activeTab", "storage" ],
    "version": "2.4.14"
 }

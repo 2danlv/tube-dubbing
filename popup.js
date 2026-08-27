@@ -5,8 +5,8 @@ const DEFAULT_MODEL = "gemini-3.5-flash-lite";
 // Bản đồ ánh xạ ngôn ngữ đích sang danh sách giọng đọc Edge TTS
 const VOICE_MAP = {
     "Tiếng Việt": [
-        { value: "vi-VN-HoaiMyNeural", text: "Nữ - Hoài My (vi-VN)" },
-        { value: "vi-VN-NamMinhNeural", text: "Nam - Nam Minh (vi-VN)" }
+        { value: "vi-VN-NamMinhNeural", text: "Nam - Nam Minh (vi-VN)" },
+        { value: "vi-VN-NamMinhNeural", text: "Nữ - Hoài My (vi-VN)" }
     ],
     "Tiếng Anh": [
         { value: "en-US-JennyNeural", text: "Nữ - Jenny (en-US)" },
@@ -124,7 +124,7 @@ async function loadSettings() {
             document.getElementById("api-model").value = result.gemini_model || DEFAULT_MODEL;
 
             const targetLang = result.gemini_target_lang || "Tiếng Việt";
-            const ttsVoice = result.gemini_tts_voice || "vi-VN-HoaiMyNeural";
+            const ttsVoice = result.gemini_tts_voice || "vi-VN-NamMinhNeural";
             const ttsRate = result.gemini_tts_rate || "-10%";
 
             document.getElementById("api-target-lang").value = targetLang;
@@ -148,7 +148,7 @@ function initUIEvents() {
     if (targetLangSelect) {
         targetLangSelect.addEventListener("change", (e) => {
             const selectedLang = e.target.value;
-            const defaultVoice = VOICE_MAP[selectedLang]?.[0]?.value || "vi-VN-HoaiMyNeural";
+            const defaultVoice = VOICE_MAP[selectedLang]?.[0]?.value || "vi-VN-NamMinhNeural";
             updateVoiceDropdown(selectedLang, defaultVoice);
         });
     }

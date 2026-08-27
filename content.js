@@ -110,7 +110,7 @@ let adWasPlaying = false;
 
 // Âm lượng video gốc tối thiểu khi đang lồng tiếng: không để tab hoàn toàn im lặng, vì Chrome
 // chặn audio.play() cho các tab nền không phát âm thanh, khiến lồng tiếng bị im bặt khi chuyển tab.
-const MIN_DUCK_VOLUME = 0.02;
+const MIN_DUCK_VOLUME = 0.005;
 
 // Quản lý âm lượng video gốc khi lồng tiếng được bật/tắt
 function syncVideoVolume() {
@@ -564,7 +564,7 @@ async function translateBlock(blockIdx, apiKey, model, targetLang) {
 
             // Bước 2: Tải giọng nói Edge TTS cho toàn bộ câu thoại trong khối
             const resultStorage = await new Promise(res => chrome.storage.local.get(["gemini_tts_voice", "gemini_tts_rate"], res));
-            const ttsVoice = resultStorage.gemini_tts_voice || "vi-VN-HoaiMyNeural";
+            const ttsVoice = resultStorage.gemini_tts_voice || "vi-VN-NamMinhNeural";
             const ttsRate = resultStorage.gemini_tts_rate || "-10%";
 
             const ttsTasks = chunk.map(item => async () => {
@@ -632,7 +632,7 @@ async function callGeminiAPI(chunk, apiKey, model, targetLang) {
 }
 
 // Hàm điều phối sinh giọng nói lồng tiếng chính (Chỉ sử dụng Edge TTS qua Background)
-async function generateTTS(text, voice = "vi-VN-HoaiMyNeural", rate = "-10%") {
+async function generateTTS(text, voice = "vi-VN-NamMinhNeural", rate = "-10%") {
     console.log(`[XT-Extension] Đang gọi Edge TTS từ Background cho câu: "${text}"`);
     const res = await new Promise((resolve, reject) => {
         chrome.runtime.sendMessage({ action: "GENERATE_EDGE_TTS", text, voice, rate }, response => {
@@ -995,7 +995,7 @@ async function preloadAudioForBlock(blockIdx) {
     console.log(`[XT-Extension] Bắt đầu tải trước âm thanh cho Block ${blockIdx}...`);
     try {
         const resultStorage = await new Promise(res => chrome.storage.local.get(["gemini_tts_voice", "gemini_tts_rate"], res));
-        const ttsVoice = resultStorage.gemini_tts_voice || "vi-VN-HoaiMyNeural";
+        const ttsVoice = resultStorage.gemini_tts_voice || "vi-VN-NamMinhNeural";
         const ttsRate = resultStorage.gemini_tts_rate || "-10%";
 
         const ttsTasks = chunk.map(item => async () => {
@@ -1056,7 +1056,7 @@ async function generateAndPlayTTSOnTheFly(segment) {
 
     try {
         const resultStorage = await new Promise(res => chrome.storage.local.get(["gemini_tts_voice", "gemini_tts_rate"], res));
-        const ttsVoice = resultStorage.gemini_tts_voice || "vi-VN-HoaiMyNeural";
+        const ttsVoice = resultStorage.gemini_tts_voice || "vi-VN-NamMinhNeural";
         const ttsRate = resultStorage.gemini_tts_rate || "-10%";
 
         console.log(`[XT-Extension] Tạo nhanh TTS lồng tiếng cho câu: "${segment.textTranslated}"`);
