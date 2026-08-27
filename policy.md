@@ -44,4 +44,4 @@ Người dùng có thể xoá toàn bộ dữ liệu cục bộ bất kỳ lúc 
 
 ## 6. Liên hệ
 
-Nếu có câu hỏi về chính sách này, vui lòng liên hệ: **[điền email/liên hệ của bạn tại đây]**
+Nếu có câu hỏi về chính sách này, vui lòng liên hệ: **2danlv@yahoo.com**
