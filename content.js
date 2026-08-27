@@ -547,56 +547,20 @@ async function translateBlock(blockIdx, apiKey, model, targetLang) {
                 }
             });
 
-            // Áp dụng Phân bổ thời gian (TimingUtils.distributeTimeProportionally) dựa trên độ dài câu dịch
-            try {
-                const texts = chunk.map(c => {
-                    const mainItem = window.latestTranscriptData.find(item => item.id === c.id);
-                    return (mainItem && mainItem.textTranslated) ? mainItem.textTranslated : c.text;
-                });
-
-                const chunkStart = chunk[0].start;
-                const chunkEnd = chunk[chunk.length - 1].end || (chunk[chunk.length - 1].start + 3.5);
-
-                let langCode = 'vi';
-                const lowerTarget = targetLang.toLowerCase();
-                if (lowerTarget.includes('anh') || lowerTarget.includes('english')) langCode = 'en';
-                else if (lowerTarget.includes('trung') || lowerTarget.includes('chinese')) langCode = 'zh';
-                else if (lowerTarget.includes('nhật') || lowerTarget.includes('japanese')) langCode = 'ja';
-                else if (lowerTarget.includes('hàn') || lowerTarget.includes('korean')) langCode = 'ko';
-                else if (lowerTarget.includes('pháp') || lowerTarget.includes('french')) langCode = 'fr';
-                else if (lowerTarget.includes('đức') || lowerTarget.includes('german')) langCode = 'de';
-                else if (lowerTarget.includes('tây ban nha') || lowerTarget.includes('spanish')) langCode = 'es';
-                else if (lowerTarget.includes('nga') || lowerTarget.includes('russian')) langCode = 'ru';
-                else if (lowerTarget.includes('ý') || lowerTarget.includes('italian')) langCode = 'it';
-                else if (lowerTarget.includes('séc') || lowerTarget.includes('czech')) langCode = 'cs';
-                else if (lowerTarget.includes('bồ đào nha') || lowerTarget.includes('portuguese') || lowerTarget.includes('brazil')) langCode = 'pt';
-                else if (lowerTarget.includes('ba lan') || lowerTarget.includes('polish')) langCode = 'pl';
-
-                console.log(`[XT-Extension] Phân bổ thời gian cho ${chunk.length} câu dịch trong khoảng [${chunkStart}s - ${chunkEnd}s]...`);
-                const newTimings = TimingUtils.distributeTimeProportionally(texts, chunkStart, chunkEnd, 50, langCode);
-
-                chunk.forEach((c, idx) => {
-                    if (newTimings[idx]) {
-                        const mainItem = window.latestTranscriptData.find(item => item.id === c.id);
-                        if (mainItem) {
-                            mainItem.start = newTimings[idx].start;
-                            mainItem.end = newTimings[idx].end;
-                        }
-                    }
-                });
-            } catch (timingErr) {
-                console.warn("[XT-Extension] Lỗi phân bổ lại thời gian phụ đề:", timingErr);
-            }
+            // Giữ nguyên start/end gốc từ phụ đề YouTube (không phân bổ lại theo độ dài bản dịch)
+            // để lồng tiếng bắt đầu đúng lúc phụ đề gốc xuất hiện trên video. playVoiceOverObject()
+            // sẽ tự tăng nhẹ tốc độ đọc nếu audio dài hơn khung thời gian câu gốc.
 
             // Bước 2: Tải giọng nói Edge TTS cho toàn bộ câu thoại trong khối
-            const resultStorage = await new Promise(res => chrome.storage.local.get(["gemini_tts_voice"], res));
+            const resultStorage = await new Promise(res => chrome.storage.local.get(["gemini_tts_voice", "gemini_tts_rate"], res));
             const ttsVoice = resultStorage.gemini_tts_voice || "vi-VN-HoaiMyNeural";
+            const ttsRate = resultStorage.gemini_tts_rate || "+0%";
 
             const ttsTasks = chunk.map(item => async () => {
                 const mainItem = window.latestTranscriptData.find(m => m.id === item.id);
                 if (mainItem && mainItem.textTranslated && !mainItem.audioObject) {
                     try {
-                        const audioUrl = await generateTTS(mainItem.textTranslated, ttsVoice);
+                        const audioUrl = await generateTTS(mainItem.textTranslated, ttsVoice, ttsRate);
                         mainItem.audioUrl = audioUrl; // Gán URL nhị phân phát nhạc
                         mainItem.audioObject = new Audio(audioUrl);
                         mainItem.audioObject.preload = "auto";
@@ -657,10 +621,10 @@ async function callGeminiAPI(chunk, apiKey, model, targetLang) {
 }
 
 // Hàm điều phối sinh giọng nói lồng tiếng chính (Chỉ sử dụng Edge TTS qua Background)
-async function generateTTS(text, voice = "vi-VN-HoaiMyNeural") {
+async function generateTTS(text, voice = "vi-VN-HoaiMyNeural", rate = "+0%") {
     console.log(`[XT-Extension] Đang gọi Edge TTS từ Background cho câu: "${text}"`);
     const res = await new Promise((resolve, reject) => {
-        chrome.runtime.sendMessage({ action: "GENERATE_EDGE_TTS", text, voice }, response => {
+        chrome.runtime.sendMessage({ action: "GENERATE_EDGE_TTS", text, voice, rate }, response => {
             if (chrome.runtime.lastError) {
                 reject(new Error(chrome.runtime.lastError.message));
             } else {
@@ -1011,14 +975,15 @@ async function preloadAudioForBlock(blockIdx) {
 
     console.log(`[XT-Extension] Bắt đầu tải trước âm thanh cho Block ${blockIdx}...`);
     try {
-        const resultStorage = await new Promise(res => chrome.storage.local.get(["gemini_tts_voice"], res));
+        const resultStorage = await new Promise(res => chrome.storage.local.get(["gemini_tts_voice", "gemini_tts_rate"], res));
         const ttsVoice = resultStorage.gemini_tts_voice || "vi-VN-HoaiMyNeural";
+        const ttsRate = resultStorage.gemini_tts_rate || "+0%";
 
         const ttsTasks = chunk.map(item => async () => {
             const mainItem = window.latestTranscriptData.find(m => m.id === item.id);
             if (mainItem && mainItem.textTranslated && !mainItem.audioObject) {
                 try {
-                    const audioUrl = await generateTTS(mainItem.textTranslated, ttsVoice);
+                    const audioUrl = await generateTTS(mainItem.textTranslated, ttsVoice, ttsRate);
                     mainItem.audioUrl = audioUrl;
                     mainItem.audioObject = new Audio(audioUrl);
                     mainItem.audioObject.preload = "auto";
@@ -1071,11 +1036,12 @@ async function generateAndPlayTTSOnTheFly(segment) {
     }
 
     try {
-        const resultStorage = await new Promise(res => chrome.storage.local.get(["gemini_tts_voice"], res));
+        const resultStorage = await new Promise(res => chrome.storage.local.get(["gemini_tts_voice", "gemini_tts_rate"], res));
         const ttsVoice = resultStorage.gemini_tts_voice || "vi-VN-HoaiMyNeural";
+        const ttsRate = resultStorage.gemini_tts_rate || "+0%";
 
         console.log(`[XT-Extension] Tạo nhanh TTS lồng tiếng cho câu: "${segment.textTranslated}"`);
-        const audioUrl = await generateTTS(segment.textTranslated, ttsVoice);
+        const audioUrl = await generateTTS(segment.textTranslated, ttsVoice, ttsRate);
         segment.audioUrl = audioUrl;
         segment.audioObject = new Audio(audioUrl);
         segment.audioObject.preload = "auto";

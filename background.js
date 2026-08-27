@@ -132,15 +132,15 @@ async function getTtsToken(locale) {
     return tokenInfo;
 }
 
-async function fetchTtsAudio(text, voice) {
+async function fetchTtsAudio(text, voice, rate = "+0%") {
     try {
         const voiceParts = voice.split("-");
         const locale = voiceParts.slice(0, 2).join("-");
-        
+
         const tokenInfo = await getTtsToken(locale);
-        
+
         const ttsUrl = `https://${tokenInfo.region}.tts.speech.microsoft.com/cognitiveservices/v1`;
-        const ssml = `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='${locale}'><voice name='${voice}'><prosody pitch='+0Hz' rate='+0%' volume='+0%'>${text}</prosody></voice></speak>`;
+        const ssml = `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='${locale}'><voice name='${voice}'><prosody pitch='+0Hz' rate='${rate}' volume='+0%'>${text}</prosody></voice></speak>`;
         
         const headers = {
             "Authorization": `Bearer ${tokenInfo.token}`,
@@ -169,7 +169,7 @@ async function fetchTtsAudio(text, voice) {
         return bytesToBase64(bytes);
     } catch (err) {
         console.warn("[XT-Background] MSTranslatorAndroidApp API lỗi, chuyển sang cơ chế WebSocket dự phòng:", err);
-        return await generateEdgeTTSBackground(text, voice);
+        return await generateEdgeTTSBackground(text, voice, rate);
     }
 }
 
@@ -248,7 +248,7 @@ async function generateSecMsGecToken() {
     return hashArray.map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
 }
 
-async function generateEdgeTTSBackground(text, voice = "vi-VN-HoaiMyNeural") {
+async function generateEdgeTTSBackground(text, voice = "vi-VN-HoaiMyNeural", rate = "+0%") {
     const connectionId = generateConnectionId();
     const token = await generateSecMsGecToken();
     const wsUrl = `wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken=6A5AA1D4EAFF4E9FB37E23D68491D6F4&ConnectionId=${connectionId}&Sec-MS-GEC=${token}&Sec-MS-GEC-Version=1-143.0.3650.75`;
@@ -272,7 +272,7 @@ async function generateEdgeTTSBackground(text, voice = "vi-VN-HoaiMyNeural") {
             const configMsg = `X-Timestamp:${timestamp}\r\nContent-Type:application/json; charset=utf-8\r\nPath:speech.config\r\n\r\n{"context":{"synthesis":{"audio":{"metadataoptions":{"sentenceBoundaryEnabled":"false","wordBoundaryEnabled":"false"},"outputFormat":"audio-24khz-48kbitrate-mono-mp3"}}}}\r\n`;
             ws.send(configMsg);
 
-            const ssmlMsg = `X-RequestId:${connectionId}\r\nContent-Type:application/ssml+xml\r\nX-Timestamp:${timestamp}Z\r\nPath:ssml\r\n\r\n<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='${locale}'><voice name='${voice}'><prosody pitch='+0Hz' rate='+0%' volume='+0%'>${text}</prosody></voice></speak>`;
+            const ssmlMsg = `X-RequestId:${connectionId}\r\nContent-Type:application/ssml+xml\r\nX-Timestamp:${timestamp}Z\r\nPath:ssml\r\n\r\n<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='${locale}'><voice name='${voice}'><prosody pitch='+0Hz' rate='${rate}' volume='+0%'>${text}</prosody></voice></speak>`;
             ws.send(ssmlMsg);
         };
 
@@ -379,12 +379,12 @@ ${JSON.stringify(chunk.map(item => ({ id: item.id, text: item.text })))}`;
 // Đăng ký nhận tin nhắn từ content script
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === "GENERATE_EDGE_TTS") {
-        let { text, voice } = message;
+        let { text, voice, rate } = message;
         // Correct legacy/invalid voice value from older versions
         if (voice === "vi-VN-NamNeural") {
             voice = "vi-VN-NamMinhNeural";
         }
-        fetchTtsAudio(text, voice)
+        fetchTtsAudio(text, voice, rate || "+0%")
             .then(audioBase64 => {
                 sendResponse({ status: "success", audioBase64: audioBase64 });
             })

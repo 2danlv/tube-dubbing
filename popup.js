@@ -118,15 +118,17 @@ async function initApplication() {
 // Tải cấu hình cài đặt
 async function loadSettings() {
     return new Promise((resolve) => {
-        chrome.storage.local.get(["gemini_api_key", "gemini_model", "gemini_target_lang", "gemini_tts_voice"], (result) => {
+        chrome.storage.local.get(["gemini_api_key", "gemini_model", "gemini_target_lang", "gemini_tts_voice", "gemini_tts_rate"], (result) => {
             const apiKey = result.gemini_api_key || "";
             document.getElementById("api-key").value = apiKey;
             document.getElementById("api-model").value = result.gemini_model || DEFAULT_MODEL;
 
             const targetLang = result.gemini_target_lang || "Tiếng Việt";
             const ttsVoice = result.gemini_tts_voice || "vi-VN-HoaiMyNeural";
+            const ttsRate = result.gemini_tts_rate || "+0%";
 
             document.getElementById("api-target-lang").value = targetLang;
+            document.getElementById("api-tts-rate").value = ttsRate;
 
             // Cập nhật động danh sách giọng lồng tiếng theo cấu hình đã lưu
             updateVoiceDropdown(targetLang, ttsVoice);
@@ -170,6 +172,7 @@ function initUIEvents() {
         const modelVal = document.getElementById("api-model").value.trim() || DEFAULT_MODEL;
         const langVal = document.getElementById("api-target-lang").value;
         const voiceVal = document.getElementById("api-tts-voice").value;
+        const rateVal = document.getElementById("api-tts-rate").value || "+0%";
 
         if (!keyVal) {
             showToast("Vui lòng nhập Gemini API Key!", "❌");
@@ -180,7 +183,8 @@ function initUIEvents() {
             gemini_api_key: keyVal,
             gemini_model: modelVal,
             gemini_target_lang: langVal,
-            gemini_tts_voice: voiceVal
+            gemini_tts_voice: voiceVal,
+            gemini_tts_rate: rateVal
         }, () => {
             showToast("Đã lưu cấu hình!", "✓");
             settingsPanel.classList.remove("active");
