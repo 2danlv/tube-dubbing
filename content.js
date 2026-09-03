@@ -1,4 +1,4 @@
-const DEBUG = false; // Tắt debug để ẩn log trong console
+const DEBUG = false;
 if (!DEBUG) {
     console.log = () => { };
     console.warn = () => { };
@@ -18,6 +18,32 @@ document.addEventListener('visibilitychange', () => {
 let segmenter = new SmartSegmenter(navigator.language || 'en');
 let clickedToEnableCC = false;
 
+// Khớp với tên hiển thị ở popup (VOICE_MAP trong popup.js) sang mã ngôn ngữ ISO để chọn đúng caption track
+const LANG_NAME_TO_CODE = {
+    "Tiếng Việt": "vi",
+    "Tiếng Anh": "en",
+    "Tiếng Nhật": "ja",
+    "Tiếng Trung": "zh",
+    "Tiếng Hàn": "ko",
+    "Tiếng Pháp": "fr",
+    "Tiếng Đức": "de",
+    "Tiếng Tây Ban Nha": "es",
+    "Tiếng Nga": "ru",
+    "Tiếng Ý": "it",
+    "Tiếng Séc": "cs",
+    "Tiếng Bồ Đào Nha (Brazil)": "pt",
+    "Tiếng Ba Lan": "pl"
+};
+
+function getTargetLangCode() {
+    return new Promise(resolve => {
+        chrome.storage.local.get(["gemini_target_lang"], (result) => {
+            const name = result.gemini_target_lang || "Tiếng Việt";
+            resolve(LANG_NAME_TO_CODE[name] || 'vi');
+        });
+    });
+}
+
 function isAdPlaying() {
     const player = document.querySelector('.html5-video-player, #movie_player');
     const adShowing = player && (player.classList.contains('ad-showing') || player.classList.contains('ad-interrupting'));
@@ -25,7 +51,7 @@ function isAdPlaying() {
     return !!(adShowing || adText);
 }
 
-function autoEnableCC() {
+function autoEnableCC(targetLangCode) {
     clickedToEnableCC = false;
     const ccBtn = document.querySelector('.ytp-subtitles-button');
     const isPressed = ccBtn && ccBtn.getAttribute('aria-pressed') === 'true';
@@ -33,7 +59,7 @@ function autoEnableCC() {
         clickedToEnableCC = true;
     }
     console.log("[XT-Extension] Gửi yêu cầu kích hoạt phụ đề qua player API...");
-    window.postMessage({ action: 'FORCE_ENABLE_SUBTITLES' }, "*");
+    window.postMessage({ action: 'FORCE_ENABLE_SUBTITLES', targetLangCode }, "*");
 }
 
 window.addEventListener('message', function (event) {
@@ -56,6 +82,9 @@ window.addEventListener('message', function (event) {
 
     const processedSubtitles = segmenter.segmentSubtitles(rawSubtitles);
     console.log('[content.js] Processing complete. Total sentences:', processedSubtitles.length);
+
+    // Lưu mã ngôn ngữ track gốc; translateBlock() sẽ dùng để so khớp với ngôn ngữ đích khi dịch
+    sourceLangHint = detail.lang || null;
 
     const result = processedSubtitles.map((sub, idx) => ({
         id: idx,
@@ -99,6 +128,9 @@ let translationEnabled = false; // Trạng thái kích hoạt dịch phụ đề
 let timeUpdateListenerAdded = false;
 let dubbingEnabled = true; // State for dubbing feature (default on)
 let subtitlesEnabled = false; // State for subtitles visibility feature (default off)
+let sourceLangHint = null; // Mã ngôn ngữ track gốc (nếu có), lấy từ tham số 'lang' trên URL timedtext.
+// translateBlock() tự tính lại việc so khớp với ngôn ngữ đích hiện tại từ biến này mỗi lần dịch
+// (không cache sẵn cờ true/false ở đây) để luôn phản ánh đúng cấu hình target lang mới nhất.
 
 // Quản lý trạng thái phát lồng tiếng
 let activeTTSAudio = null;
@@ -111,6 +143,13 @@ let adWasPlaying = false;
 // Âm lượng video gốc tối thiểu khi đang lồng tiếng: không để tab hoàn toàn im lặng, vì Chrome
 // chặn audio.play() cho các tab nền không phát âm thanh, khiến lồng tiếng bị im bặt khi chuyển tab.
 const MIN_DUCK_VOLUME = 0.005;
+// Tỉ lệ giữ lại từ âm lượng gốc: giữ nhỏ để vẫn nghe được thao tác kéo volume lên/xuống của
+// người dùng (không bị "cứng" một mức cố định), nhưng đủ nhỏ để không át giọng lồng tiếng.
+const DUCK_VOLUME_RATIO = 0.05;
+
+function getDuckedVolume(vol) {
+    return Math.max(vol * DUCK_VOLUME_RATIO, MIN_DUCK_VOLUME);
+}
 
 // Quản lý âm lượng video gốc khi lồng tiếng được bật/tắt
 function syncVideoVolume() {
@@ -123,7 +162,7 @@ function syncVideoVolume() {
             originalVolume = video.volume;
         }
         isSettingVolumeSelf = true;
-        video.volume = Math.max(originalVolume * 0.15, MIN_DUCK_VOLUME);
+        video.volume = getDuckedVolume(originalVolume);
         video.muted = false; // Không để video gốc bị mute hẳn khi đang lồng tiếng
         isSettingVolumeSelf = false;
         console.log(`[XT-Extension] Đã giảm âm lượng video xuống: ${(video.volume * 100).toFixed(0)}% (đang bật lồng tiếng).`);
@@ -441,16 +480,16 @@ async function handleVideoTranslateClick() {
         document.head.appendChild(spinStyle);
     }
 
-    if (subOverlay && subtitlesEnabled) {
-        subOverlay.innerText = "Đang dịch và lồng tiếng, bạn đợi 1 chút ...";
-        subOverlay.style.display = 'block';
-    }
-
     // 3. Tải cấu hình API Key & Model
     chrome.storage.local.get(["gemini_api_key", "gemini_model", "gemini_target_lang"], async (result) => {
         const apiKey = result.gemini_api_key ? result.gemini_api_key.trim() : DEFAULT_API_KEY;
         const model = result.gemini_model ? result.gemini_model.trim() : DEFAULT_MODEL;
         const targetLang = result.gemini_target_lang || "Tiếng Việt";
+
+        if (subOverlay && subtitlesEnabled) {
+            subOverlay.innerText = getDubbingStatusMessage(0, targetLang);
+            subOverlay.style.display = 'block';
+        }
 
         if (!apiKey) {
             transBtn.classList.remove('translating');
@@ -517,16 +556,41 @@ async function limitConcurrency(tasks, limit) {
     return Promise.all(results);
 }
 
+// Lọc phụ đề của một khối và xác định khối đó có cần gọi Gemini để dịch hay không
+// (dùng chung cho translateBlock lẫn phần hiển thị thông báo trạng thái trên overlay).
+function getBlockChunkAndTranslationNeed(blockIdx, targetLang) {
+    const startTime = blockIdx * BLOCK_DURATION;
+    const endTime = (blockIdx + 1) * BLOCK_DURATION;
+    const chunk = window.latestTranscriptData.filter(item => item.start >= startTime && item.start < endTime);
+
+    // Tính lại (không dùng cờ đã cache ở lúc phát hiện phụ đề) đề phòng người dùng đổi ngôn ngữ
+    // đích trong Cài đặt SAU khi phụ đề đã được intercept mà chưa reload lại trang.
+    const currentTargetCode = LANG_NAME_TO_CODE[targetLang] || null;
+    const sourceMatchesCurrentTarget = chunk.length > 0 && (
+        (currentTargetCode && sourceLangHint && sourceLangHint.toLowerCase().startsWith(currentTargetCode)) ||
+        (currentTargetCode === 'vi' && TextNormalizer.looksVietnamese(chunk.map(c => c.text).join(' ')))
+    );
+
+    return { chunk, sourceMatchesCurrentTarget };
+}
+
+// Thông báo hiển thị trên overlay: phân biệt rõ đang "dịch + lồng tiếng" (có gọi Gemini)
+// hay chỉ "lồng tiếng" thuần (phụ đề gốc đã đúng ngôn ngữ đích, hoặc chỉ đang sinh lại audio).
+function getDubbingStatusMessage(blockIdx, targetLang) {
+    const { sourceMatchesCurrentTarget } = getBlockChunkAndTranslationNeed(blockIdx, targetLang);
+    return sourceMatchesCurrentTarget
+        ? "Đang lồng tiếng, bạn đợi chút nhé ..."
+        : "Đang dịch và lồng tiếng, bạn đợi chút nhé ...";
+}
+
 // HÀM DỊCH VÀ SINH LỒNG TIẾNG CHO MỘT KHỐI PHỤ ĐỀ (BLOCK N)
 async function translateBlock(blockIdx, apiKey, model, targetLang) {
     if (translatedBlocks[blockIdx]) return; // Đã dịch rồi
     translatingBlocks[blockIdx] = true;
 
-    // Lọc phụ đề nằm trong tầm thời gian của khối này [blockIdx * 60, (blockIdx + 1) * 60]
     const startTime = blockIdx * BLOCK_DURATION;
     const endTime = (blockIdx + 1) * BLOCK_DURATION;
-
-    const chunk = window.latestTranscriptData.filter(item => item.start >= startTime && item.start < endTime);
+    const { chunk, sourceMatchesCurrentTarget } = getBlockChunkAndTranslationNeed(blockIdx, targetLang);
 
     if (chunk.length === 0) {
         // Không có phụ đề nào trong mốc này
@@ -544,19 +608,28 @@ async function translateBlock(blockIdx, apiKey, model, targetLang) {
 
     while (retryCount < MAX_RETRIES && !success) {
         try {
-            // Bước 1: Dịch văn bản với Gemini API
-            const translatedResult = await callGeminiAPI(chunk, apiKey, model, targetLang);
+            if (sourceMatchesCurrentTarget) {
+                // Phụ đề gốc đã đúng ngôn ngữ đích -> bỏ qua Gemini, đọc thẳng nguyên văn
+                console.log(`[XT-Extension] Block ${blockIdx}: Phụ đề gốc đã khớp ngôn ngữ đích (${targetLang}), bỏ qua bước dịch AI.`);
+                chunk.forEach(item => {
+                    const mainItem = window.latestTranscriptData.find(m => m.id === item.id);
+                    if (mainItem) mainItem.textTranslated = mainItem.text;
+                });
+            } else {
+                // Bước 1: Dịch văn bản với Gemini API
+                const translatedResult = await callGeminiAPI(chunk, apiKey, model, targetLang);
 
-            // Khớp bản dịch vào dữ liệu chính
-            translatedResult.forEach(translatedItem => {
-                const matchedOrig = chunk.find(c => c.id == translatedItem.id);
-                if (matchedOrig) {
-                    const mainItem = window.latestTranscriptData.find(item => item.id === matchedOrig.id);
-                    if (mainItem) {
-                        mainItem.textTranslated = translatedItem.text;
+                // Khớp bản dịch vào dữ liệu chính
+                translatedResult.forEach(translatedItem => {
+                    const matchedOrig = chunk.find(c => c.id == translatedItem.id);
+                    if (matchedOrig) {
+                        const mainItem = window.latestTranscriptData.find(item => item.id === matchedOrig.id);
+                        if (mainItem) {
+                            mainItem.textTranslated = translatedItem.text;
+                        }
                     }
-                }
-            });
+                });
+            }
 
             // Giữ nguyên start/end gốc từ phụ đề YouTube (không phân bổ lại theo độ dài bản dịch)
             // để lồng tiếng bắt đầu đúng lúc phụ đề gốc xuất hiện trên video. playVoiceOverObject()
@@ -782,14 +855,14 @@ function handleVideoVolumeChange() {
         isSettingVolumeSelf = false;
     }
 
-    // Nếu volume hiện tại khác với mức 15% mong muốn
-    const targetVolume = Math.max(originalVolume * 0.15, MIN_DUCK_VOLUME);
-    if (Math.abs(video.volume - targetVolume) > 0.01) {
+    // Nếu volume hiện tại khác với mức duck mong muốn -> người dùng vừa tự kéo thanh volume
+    // của player YouTube, giá trị mới đó chính là mức âm lượng gốc họ muốn đặt.
+    if (Math.abs(video.volume - getDuckedVolume(originalVolume)) > 0.01) {
         console.log(`[XT-Extension] Phát hiện thay đổi volume ngoài: ${video.volume}. Cập nhật volume gốc.`);
         originalVolume = video.volume;
 
         isSettingVolumeSelf = true;
-        video.volume = Math.max(originalVolume * 0.15, MIN_DUCK_VOLUME);
+        video.volume = getDuckedVolume(originalVolume);
         isSettingVolumeSelf = false;
     }
 }
@@ -874,7 +947,7 @@ function handleVideoTimeUpdate() {
             video.wasPausedByTTSLoading = true;
             const subOverlay = document.getElementById('yt-translate-subtitle-overlay');
             if (subOverlay) {
-                subOverlay.innerText = "Đang dịch và lồng tiếng, bạn đợi 1 chút ...";
+                subOverlay.innerText = "Đang lồng tiếng, bạn đợi chút nhé ...";
                 subOverlay.style.display = 'block';
             }
         }
@@ -1030,7 +1103,7 @@ function resumeVideoAfterPreload() {
         video.play().catch(e => console.warn("[XT-Extension] Không thể tự phát tiếp video:", e));
     }
     const subOverlay = document.getElementById('yt-translate-subtitle-overlay');
-    if (subOverlay && subOverlay.innerText.includes("Đang dịch và lồng tiếng")) {
+    if (subOverlay && subOverlay.innerText.includes("đợi chút nhé")) {
         subOverlay.style.display = 'none';
     }
 }
@@ -1050,7 +1123,7 @@ async function generateAndPlayTTSOnTheFly(segment) {
     }
 
     if (subOverlay) {
-        subOverlay.innerText = "Đang dịch và lồng tiếng, bạn đợi 1 chút ...";
+        subOverlay.innerText = "Đang lồng tiếng, bạn đợi chút nhé ...";
         subOverlay.style.display = 'block';
     }
 
@@ -1355,14 +1428,17 @@ function cleanupExtensionState() {
 // Điều khiển kích hoạt cào phụ đề khi tải trang xong
 function triggerExtension() {
     cleanupExtensionState();
-    autoEnableCC();
 
-    // Lấy cache từ MAIN world nếu transcript đã được intercept trước khi content.js load
     const activeVideoId = getActiveVideoId();
-    if (activeVideoId) {
-        console.log('[content.js] Requesting cached transcript for video:', activeVideoId);
-        window.postMessage({ action: 'REQUEST_INTERCEPTED_CACHE', videoId: activeVideoId }, "*");
-    }
+    getTargetLangCode().then(targetLangCode => {
+        autoEnableCC(targetLangCode);
+
+        // Lấy cache từ MAIN world nếu transcript đã được intercept trước khi content.js load
+        if (activeVideoId) {
+            console.log('[content.js] Requesting cached transcript for video:', activeVideoId, 'targetLangCode:', targetLangCode);
+            window.postMessage({ action: 'REQUEST_INTERCEPTED_CACHE', videoId: activeVideoId, targetLangCode }, "*");
+        }
+    });
 }
 
 // Hàm kiểm tra và kích hoạt tiện ích khi trình phát video đã thực sự tải xong video mới

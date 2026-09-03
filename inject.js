@@ -155,12 +155,16 @@
   }
 
   function dispatchInterceptedEvent(videoId, data, url) {
+    let lang = null;
+    try { lang = new URL(url, window.location.origin).searchParams.get('lang'); } catch (e) {}
+
     const eventDetail = {
       action: 'YT_TRANSCRIPT_INTERCEPTED',
       namespace: namespace,
       videoId: videoId,
       data: data,
-      url: url
+      url: url,
+      lang: lang
     };
     window.postMessage(eventDetail, "*");
     log('[inject.js] Intercepted and dispatched postMessage for video:', videoId);
@@ -190,25 +194,35 @@
     return false;
   }
 
-  function tryExtractFromPlayer(videoId, retryCount = 0) {
+  // Ưu tiên track khớp đúng ngôn ngữ đích đang cấu hình trong popup (nếu có truyền vào),
+  // nếu không thì rơi về thứ tự mặc định: tiếng Việt -> tiếng Anh -> track đầu tiên tìm thấy.
+  // Dùng so khớp theo tiền tố, không phân biệt hoa/thường để chấp nhận cả mã có vùng miền
+  // như "zh-Hans", "pt-BR" khớp với targetLangCode dạng ngắn ("zh", "pt").
+  function pickBestCaptionTrack(tracks, targetLangCode) {
+    const target = (targetLangCode || '').toLowerCase();
+    return (target && tracks.find(t => (t.languageCode || '').toLowerCase().startsWith(target))) ||
+      tracks.find(t => (t.languageCode || '').toLowerCase().startsWith('vi')) ||
+      tracks.find(t => (t.languageCode || '').toLowerCase().startsWith('en')) ||
+      tracks[0];
+  }
+
+  function tryExtractFromPlayer(videoId, retryCount = 0, targetLangCode = null) {
     const player = document.getElementById('movie_player') || document.querySelector('.html5-video-player');
     if (player && typeof player.getCaptionTracks === 'function') {
       const tracks = player.getCaptionTracks() || [];
       if (tracks.length > 0) {
-        const bestTrack = tracks.find(t => t.languageCode === 'vi') || 
-                          tracks.find(t => t.languageCode === 'en') || 
-                          tracks[0];
+        const bestTrack = pickBestCaptionTrack(tracks, targetLangCode);
         if (bestTrack && bestTrack.baseUrl) {
           fetchAndDispatchTrack(videoId, bestTrack.baseUrl);
           return;
         }
       }
     }
-    
+
     if (retryCount < 5) {
       log('[inject.js] Player tracks not ready yet, retrying in 1s... Attempt:', retryCount + 1);
       setTimeout(() => {
-        tryExtractFromPlayer(videoId, retryCount + 1);
+        tryExtractFromPlayer(videoId, retryCount + 1, targetLangCode);
       }, 1000);
     } else {
       log('[inject.js] Failed to extract transcript from player after retries.');
@@ -230,30 +244,41 @@
     
     if (event.data && event.data.action === 'REQUEST_INTERCEPTED_CACHE') {
       const videoId = event.data.videoId;
-      log('[inject.js] Nhận yêu cầu lấy cache phụ đề, videoId:', videoId);
+      const targetLangCode = event.data.targetLangCode || null;
+      log('[inject.js] Nhận yêu cầu lấy cache phụ đề, videoId:', videoId, 'targetLangCode:', targetLangCode);
       const cached = interceptedCache[videoId];
       if (cached) {
         log('[inject.js] Cache hit! Trả về phụ đề cho videoId:', videoId);
         dispatchInterceptedEvent(videoId, cached.data, cached.url);
+
+        // Nếu cache hiện tại không khớp ngôn ngữ đích mong muốn, chủ động lấy lại đúng track
+        // (dữ liệu mới sẽ ghi đè cache và dispatch lại khi có, xem fetchAndDispatchTrack()).
+        if (targetLangCode) {
+          let cachedLang = null;
+          try { cachedLang = new URL(cached.url, window.location.origin).searchParams.get('lang'); } catch (e) {}
+          if (cachedLang && !cachedLang.toLowerCase().startsWith(targetLangCode.toLowerCase())) {
+            log('[inject.js] Cache hiện tại (' + cachedLang + ') không khớp target (' + targetLangCode + '), thử lấy lại track đúng ngôn ngữ...');
+            tryExtractFromPlayer(videoId, 0, targetLangCode);
+          }
+        }
       } else {
         log('[inject.js] Cache miss cho videoId:', videoId, '. Trích xuất từ player...');
-        tryExtractFromPlayer(videoId);
+        tryExtractFromPlayer(videoId, 0, targetLangCode);
       }
     } else if (event.data && event.data.action === 'FORCE_ENABLE_SUBTITLES') {
+      const targetLangCode = event.data.targetLangCode || null;
       const player = document.getElementById('movie_player') || document.querySelector('.html5-video-player');
       if (player) {
         try {
           if (typeof player.loadModule === 'function') {
             player.loadModule("captions");
           }
-          
+
           let trackSet = false;
           if (typeof player.getCaptionTracks === 'function') {
             const tracks = player.getCaptionTracks() || [];
             if (tracks.length > 0) {
-              const bestTrack = tracks.find(t => t.languageCode === 'vi') || 
-                                tracks.find(t => t.languageCode === 'en') || 
-                                tracks[0];
+              const bestTrack = pickBestCaptionTrack(tracks, targetLangCode);
               if (bestTrack) {
                 const videoId = document.body.getAttribute('data-yt-active-video-id') || getActiveVideoIdFromUrl();
                 if (videoId && !interceptedCache[videoId]) {

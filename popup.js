@@ -2,11 +2,29 @@
 const DEFAULT_API_KEY = "";
 const DEFAULT_MODEL = "gemini-3.5-flash-lite";
 
+// Khớp với tên hiển thị của dropdown ngôn ngữ đích sang mã ISO, dùng để phát hiện phụ đề gốc
+// đã đúng ngôn ngữ đích hay chưa (khi đó bỏ qua Gemini, giữ nguyên văn thay vì "dịch" vô ích)
+const LANG_NAME_TO_CODE = {
+    "Tiếng Việt": "vi",
+    "Tiếng Anh": "en",
+    "Tiếng Nhật": "ja",
+    "Tiếng Trung": "zh",
+    "Tiếng Hàn": "ko",
+    "Tiếng Pháp": "fr",
+    "Tiếng Đức": "de",
+    "Tiếng Tây Ban Nha": "es",
+    "Tiếng Nga": "ru",
+    "Tiếng Ý": "it",
+    "Tiếng Séc": "cs",
+    "Tiếng Bồ Đào Nha (Brazil)": "pt",
+    "Tiếng Ba Lan": "pl"
+};
+
 // Bản đồ ánh xạ ngôn ngữ đích sang danh sách giọng đọc Edge TTS
 const VOICE_MAP = {
     "Tiếng Việt": [
         { value: "vi-VN-NamMinhNeural", text: "Nam - Nam Minh (vi-VN)" },
-        { value: "vi-VN-NamMinhNeural", text: "Nữ - Hoài My (vi-VN)" }
+        { value: "vi-VN-HoaiMyNeural", text: "Nữ - Hoài My (vi-VN)" }
     ],
     "Tiếng Anh": [
         { value: "en-US-JennyNeural", text: "Nữ - Jenny (en-US)" },
@@ -81,6 +99,17 @@ let currentTranscript = []; // Lưu trữ mảng transcript hiện tại: [{ sta
 let activeTabId = null;
 let activeVideoId = null;
 let activeVideoTitle = "youtube-transcript";
+let isYouTubeTab = false;
+
+// Phải khớp CHÍNH XÁC với hàm simpleHash() trong generic-content.js để cache key trùng nhau
+function simpleHashForUrl(str) {
+    let hash = 5381;
+    for (let i = 0; i < str.length; i++) {
+        hash = ((hash << 5) + hash) + str.charCodeAt(i);
+        hash |= 0;
+    }
+    return 'g' + Math.abs(hash).toString(36);
+}
 
 // Khi mở Popup
 document.addEventListener("DOMContentLoaded", async () => {
@@ -102,7 +131,14 @@ async function initApplication() {
     if (tab.url) {
         try {
             const urlObj = new URL(tab.url);
-            activeVideoId = urlObj.searchParams.get("v");
+            isYouTubeTab = /(^|\.)youtube\.com$/.test(urlObj.hostname);
+            if (isYouTubeTab) {
+                activeVideoId = urlObj.searchParams.get("v");
+            } else {
+                // Trang generic (không phải YouTube): dùng hash của URL (bỏ query) làm ID cache,
+                // phải khớp với getActiveVideoId() trong generic-content.js
+                activeVideoId = simpleHashForUrl(urlObj.origin + urlObj.pathname);
+            }
         } catch (e) {
             console.error("Không thể phân tích URL:", e);
         }
@@ -209,6 +245,10 @@ function initUIEvents() {
     // Nút Dịch phụ đề
     const translateBtn = document.getElementById("btn-translate-action");
     translateBtn.addEventListener("click", startTranslationWorkflow);
+
+    // Nút Đọc phụ đề gốc (không dịch qua Gemini, đọc thẳng nguyên văn)
+    const readOriginalBtn = document.getElementById("btn-read-original");
+    if (readOriginalBtn) readOriginalBtn.addEventListener("click", startReadOriginalWorkflow);
 
     // Bộ chọn chế độ hiển thị (Song ngữ, Tiếng Việt, Bản gốc)
     const tabButtons = document.querySelectorAll(".tab-btn");
@@ -318,62 +358,171 @@ function initUIEvents() {
     }
 }
 
-// Gửi tin nhắn yêu cầu dữ liệu phụ đề gốc từ content.js
+// Gửi tin nhắn yêu cầu dữ liệu phụ đề gốc từ content.js. Trả về Promise resolve khi
+// currentTranscript đã được cập nhật (hoặc xác định là không có gì) để nơi gọi có thể await.
 function fetchTranscriptFromContent() {
     const box = document.getElementById("transcript-box");
 
-    if (!activeTabId) return;
+    if (!activeTabId) return Promise.resolve();
 
-    chrome.tabs.sendMessage(activeTabId, { action: "REQUEST_TRANSCRIPT_FROM_CONTENT" }, async (response) => {
-        if (chrome.runtime.lastError) {
-            console.warn("Lỗi nhận transcript từ content script:", chrome.runtime.lastError.message);
-            box.innerHTML = `
-                <div class="empty-state">
-                    <span class="empty-icon">⚠️</span>
-                    <span class="empty-text">Chưa nhận được dữ liệu thoại. Xin vui lòng chờ video tải xong hoặc tải lại trang (F5) YouTube nhé!</span>
-                </div>
-            `;
-            return;
-        }
-        if (response && response.status === "success" && response.data && response.data.length > 0) {
-            currentTranscript = response.data.map((item, idx) => ({
-                id: idx,
-                start: item.start,
-                end: item.end || (item.start + 3),
-                dur: item.dur || 3,
-                time: item.time,
-                text: item.text,
-                textTranslated: item.textTranslated || "" // Giữ lại nội dung đã dịch từ content.js nếu có
-            }));
-
-            // Kiểm tra xem video này đã được dịch và lưu trữ trước đó chưa
-            if (activeVideoId) {
-                chrome.storage.local.get([`yt_trans_${activeVideoId}`], (result) => {
-                    const cachedData = result[`yt_trans_${activeVideoId}`];
-                    if (cachedData && cachedData.length === currentTranscript.length) {
-                        // Khớp lại bản dịch từ bộ nhớ cache
-                        currentTranscript.forEach((item, index) => {
-                            item.textTranslated = cachedData[index].textTranslated || "";
-                        });
-                        console.log("Đã tải bản dịch đã lưu từ cache!");
-
-                        // Chuyển tab sang chế độ Song ngữ mặc định khi có bản dịch
-                        const tabBilingual = document.querySelector('[data-view="bilingual"]');
-                        if (tabBilingual) tabBilingual.click();
-                    }
-                    renderTranscript();
-                });
-            } else {
-                renderTranscript();
+    return new Promise((resolve) => {
+        chrome.tabs.sendMessage(activeTabId, { action: "REQUEST_TRANSCRIPT_FROM_CONTENT" }, async (response) => {
+            if (chrome.runtime.lastError) {
+                console.warn("Lỗi nhận transcript từ content script:", chrome.runtime.lastError.message);
+                if (isYouTubeTab) {
+                    box.innerHTML = `
+                        <div class="empty-state">
+                            <span class="empty-icon">⚠️</span>
+                            <span class="empty-text">Chưa nhận được dữ liệu thoại. Xin vui lòng chờ video tải xong hoặc tải lại trang (F5) YouTube nhé!</span>
+                        </div>
+                    `;
+                } else {
+                    renderGenericActivatePrompt();
+                }
+                resolve();
+                return;
             }
+            if (response && response.status === "success" && response.data && response.data.length > 0) {
+                await applyTranscriptResponse(response);
+                resolve();
+            } else if (isYouTubeTab) {
+                box.innerHTML = `
+                    <div class="empty-state">
+                        <span class="empty-icon">⚠️</span>
+                        <span class="empty-text">Chưa nhận được dữ liệu thoại. Xin vui lòng chờ video tải xong hoặc tải lại trang (F5) YouTube nhé!</span>
+                    </div>
+                `;
+                resolve();
+            } else {
+                renderGenericActivatePrompt("Chưa tìm thấy phụ đề VTT nào trên trang này. Hãy chắc chắn video đã bật phụ đề (CC), rồi bấm nút bên dưới.");
+                resolve();
+            }
+        });
+    });
+}
+
+// Cập nhật currentTranscript từ response REQUEST_TRANSCRIPT_FROM_CONTENT (khớp cache bản dịch,
+// render lại UI). Tách riêng để tái sử dụng ở cả fetchTranscriptFromContent lẫn poll trong
+// activateGenericSubtitle, tránh phải gửi tin nhắn REQUEST_TRANSCRIPT_FROM_CONTENT trùng lặp.
+function applyTranscriptResponse(response) {
+    return new Promise((resolve) => {
+        currentTranscript = response.data.map((item, idx) => ({
+            id: idx,
+            start: item.start,
+            end: item.end || (item.start + 3),
+            dur: item.dur || 3,
+            time: item.time,
+            text: item.text,
+            textTranslated: item.textTranslated || "" // Giữ lại nội dung đã dịch từ content.js nếu có
+        }));
+
+        // Kiểm tra xem video này đã được dịch và lưu trữ trước đó chưa
+        if (activeVideoId) {
+            chrome.storage.local.get([`yt_trans_${activeVideoId}`], (result) => {
+                const cachedData = result[`yt_trans_${activeVideoId}`];
+                if (cachedData && cachedData.length === currentTranscript.length) {
+                    // Khớp lại bản dịch từ bộ nhớ cache
+                    currentTranscript.forEach((item, index) => {
+                        item.textTranslated = cachedData[index].textTranslated || "";
+                    });
+                    console.log("Đã tải bản dịch đã lưu từ cache!");
+
+                    // Chuyển tab sang chế độ Song ngữ mặc định khi có bản dịch
+                    const tabBilingual = document.querySelector('[data-view="bilingual"]');
+                    if (tabBilingual) tabBilingual.click();
+                }
+                renderTranscript();
+                resolve();
+            });
         } else {
-            box.innerHTML = `
-                <div class="empty-state">
-                    <span class="empty-icon">⚠️</span>
-                    <span class="empty-text">Chưa nhận được dữ liệu thoại. Xin vui lòng chờ video tải xong hoặc tải lại trang (F5) YouTube nhé!</span>
-                </div>
-            `;
+            renderTranscript();
+            resolve();
         }
+    });
+}
+
+// Hiển thị lời nhắc kích hoạt tìm phụ đề VTT cho các trang không phải YouTube
+function renderGenericActivatePrompt(message) {
+    const box = document.getElementById("transcript-box");
+    box.innerHTML = `
+        <div class="empty-state">
+            <span class="empty-icon">🎬</span>
+            <span class="empty-text">${message || "Trang này không phải YouTube. Bấm nút bên dưới để tìm phụ đề dạng VTT (thẻ &lt;track&gt; hoặc file .vtt tải qua mạng) trên trang hiện tại."}</span>
+            <button class="btn-translate" id="btn-activate-generic" style="flex: none; padding: 8px 20px;">Kích hoạt / Quét lại</button>
+        </div>
+    `;
+    const btn = document.getElementById("btn-activate-generic");
+    if (btn) btn.addEventListener("click", activateGenericSubtitle);
+}
+
+// Chèn generic-inject.js (MAIN world) + generic-content.js (ISOLATED) vào tab hiện tại
+// CHỈ MỘT LẦN cho mỗi lần tải trang (chèn lại các class utils sẽ lỗi "đã được khai báo"
+// vì chạy chung global scope với lần chèn trước). Nếu script đã có sẵn, chỉ gửi yêu cầu quét lại.
+// Trả về true/false báo có tìm được phụ đề hay không, để nơi gọi (vd nút Dịch AI) có thể await.
+async function activateGenericSubtitle() {
+    if (!activeTabId) return false;
+    const box = document.getElementById("transcript-box");
+    box.innerHTML = `
+        <div class="empty-state">
+            <span class="empty-icon">⏳</span>
+            <span class="empty-text">Đang tìm phụ đề VTT trên trang này...</span>
+        </div>
+    `;
+
+    const alreadyInjected = await new Promise((resolve) => {
+        chrome.tabs.sendMessage(activeTabId, { action: "RESCAN_SUBTITLES" }, () => {
+            resolve(!chrome.runtime.lastError);
+        });
+    });
+
+    if (!alreadyInjected) {
+        try {
+            await chrome.scripting.executeScript({
+                target: { tabId: activeTabId },
+                world: "MAIN",
+                files: ["generic-inject.js"]
+            });
+            await chrome.scripting.executeScript({
+                target: { tabId: activeTabId },
+                files: ["utils/normalizer.js", "utils/timing.js", "utils/segmenter.js", "utils/vttParser.js", "generic-content.js"]
+            });
+        } catch (err) {
+            console.error("Lỗi khi chèn script generic:", err);
+            showToast("Không thể kích hoạt trên trang này!", "❌");
+            renderGenericActivatePrompt("Không thể kích hoạt trên trang này (có thể trình duyệt chặn). Vui lòng thử lại.");
+            return false;
+        }
+    }
+
+    return new Promise((resolve) => {
+        let attempts = 0;
+        const maxAttempts = 15; // ~1s + 15*1.5s ≈ 23s, đủ thời gian cho content script chờ video/cues chậm
+        const poll = () => {
+            attempts++;
+            chrome.tabs.sendMessage(activeTabId, { action: "REQUEST_TRANSCRIPT_FROM_CONTENT" }, async (response) => {
+                if (chrome.runtime.lastError) {
+                    if (attempts < maxAttempts) {
+                        setTimeout(poll, 1500);
+                    } else {
+                        renderGenericActivatePrompt("Không thể kết nối tới trang. Vui lòng tải lại trang rồi thử lại.");
+                        resolve(false);
+                    }
+                    return;
+                }
+                if (response && response.status === "success" && response.data && response.data.length > 0) {
+                    await applyTranscriptResponse(response);
+                    resolve(true);
+                    return;
+                }
+                if (attempts < maxAttempts) {
+                    setTimeout(poll, 1500);
+                } else {
+                    renderGenericActivatePrompt("Không tìm thấy phụ đề VTT nào trên trang này. Hãy chắc chắn video đã bật phụ đề (CC), rồi bấm 'Kích hoạt / Quét lại'.");
+                    resolve(false);
+                }
+            });
+        };
+        setTimeout(poll, 1000);
     });
 }
 
@@ -652,7 +801,16 @@ function filterTranscript(query) {
 
 // BẮT ĐẦU LUỒNG DỊCH AI
 async function startTranslationWorkflow() {
-    if (currentTranscript.length === 0) return;
+    if (currentTranscript.length === 0) {
+        if (isYouTubeTab) return; // Trang YouTube: chờ content.js tự cào phụ đề, không có gì để tự kích hoạt thêm
+
+        // Trang generic: tự kích hoạt tìm phụ đề VTT luôn, khỏi cần người dùng bấm "Kích hoạt" riêng trước
+        const translateBtn = document.getElementById("btn-translate-action");
+        if (translateBtn) translateBtn.disabled = true;
+        const found = await activateGenericSubtitle();
+        if (translateBtn) translateBtn.disabled = false;
+        if (!found || currentTranscript.length === 0) return;
+    }
 
     // Tải cấu hình API Key & Model mới nhất từ storage
     chrome.storage.local.get(["gemini_api_key", "gemini_model", "gemini_target_lang"], async (result) => {
@@ -687,6 +845,8 @@ async function startTranslationWorkflow() {
 
         const totalChunks = chunks.length;
         let successCount = 0;
+        let anyChunkActuallyTranslated = false;
+        const targetLangCode = LANG_NAME_TO_CODE[targetLang] || null;
 
         progressBarFill.style.width = "0%";
         progressStatus.innerText = "0%";
@@ -696,6 +856,31 @@ async function startTranslationWorkflow() {
             const chunk = chunks[chunkIdx];
             const startLineNum = chunk[0].id + 1;
             const endLineNum = chunk[chunk.length - 1].id + 1;
+
+            // Phụ đề gốc của cụm này đã là đúng ngôn ngữ đích rồi (hiện chỉ nhận diện được tiếng Việt
+            // qua heuristic nội dung, vì ở đây không có thông tin mã ngôn ngữ track như bên content script)
+            // -> bỏ qua gọi Gemini, giữ nguyên văn để tránh Gemini "diễn giải lại" không cần thiết.
+            const chunkAlreadyMatchesTarget = targetLangCode === 'vi' &&
+                TextNormalizer.looksVietnamese(chunk.map(c => c.text).join(' '));
+
+            if (chunkAlreadyMatchesTarget) {
+                chunk.forEach(item => {
+                    const originalItem = currentTranscript.find(c => c.id === item.id);
+                    if (originalItem) originalItem.textTranslated = originalItem.text;
+                });
+
+                successCount++;
+                const percent = Math.round(((chunkIdx + 1) / totalChunks) * 100);
+                progressBarFill.style.width = `${percent}%`;
+                progressStatus.innerText = `${percent}%`;
+                renderTranscript();
+                // Nhường lại vòng lặp sự kiện giữa các cụm để tránh đơ UI khi có nhiều cụm
+                // bị bỏ qua liên tiếp (không có độ trễ chờ API như nhánh dịch thật bên dưới).
+                await new Promise(resolve => setTimeout(resolve, 0));
+                continue;
+            }
+
+            anyChunkActuallyTranslated = true;
 
             progressLabel.innerText = `Đang dịch dòng ${startLineNum} - ${endLineNum} (${chunkIdx + 1}/${totalChunks})...`;
 
@@ -753,7 +938,11 @@ async function startTranslationWorkflow() {
         progressContainer.classList.remove("active");
 
         if (successCount === totalChunks) {
-            showToast("Đã dịch xong bằng Gemini AI!", "🎉");
+            if (anyChunkActuallyTranslated) {
+                showToast("Đã dịch xong bằng Gemini AI!", "🎉");
+            } else {
+                showToast("Phụ đề gốc đã đúng ngôn ngữ đích, không cần dịch!", "✓");
+            }
 
             // Lưu bản dịch vào cache local storage để không tốn quota API lần sau
             if (activeVideoId) {
@@ -787,6 +976,53 @@ async function startTranslationWorkflow() {
             if (tabBilingual) tabBilingual.click();
         }
     });
+}
+
+// ĐỌC PHỤ ĐỀ GỐC (không gọi Gemini): copy nguyên văn text -> textTranslated cho mọi dòng,
+// rồi kích hoạt cùng pipeline đọc/lồng tiếng như nút "Dịch Phụ Đề (AI)". Không cần Gemini API Key.
+async function startReadOriginalWorkflow() {
+    const readBtn = document.getElementById("btn-read-original");
+
+    if (currentTranscript.length === 0) {
+        if (isYouTubeTab) return; // Trang YouTube: chờ content.js tự cào phụ đề
+
+        if (readBtn) readBtn.disabled = true;
+        const found = await activateGenericSubtitle();
+        if (readBtn) readBtn.disabled = false;
+        if (!found || currentTranscript.length === 0) return;
+    }
+
+    currentTranscript.forEach(item => {
+        item.textTranslated = item.text;
+    });
+    renderTranscript();
+
+    if (activeVideoId) {
+        const dataToSave = currentTranscript.map(item => ({
+            id: item.id,
+            textTranslated: item.textTranslated
+        }));
+        chrome.storage.local.set({ [`yt_trans_${activeVideoId}`]: dataToSave });
+    }
+
+    if (activeTabId) {
+        chrome.tabs.sendMessage(activeTabId, {
+            action: "UPDATE_TRANSLATIONS",
+            data: currentTranscript.map(item => ({
+                id: item.id,
+                textTranslated: item.textTranslated
+            }))
+        }, () => {
+            if (chrome.runtime.lastError) {
+                console.warn("Lỗi đồng bộ sang content script:", chrome.runtime.lastError.message);
+            }
+        });
+    }
+
+    showToast("Sẽ đọc nguyên văn phụ đề gốc, không dịch!", "🔊");
+
+    const tabOrig = document.querySelector('[data-view="orig"]');
+    if (tabOrig) tabOrig.click();
 }
 
 async function translateChunkWithGemini(chunk, apiKey, model, targetLang) {

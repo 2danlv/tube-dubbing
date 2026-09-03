@@ -26,16 +26,17 @@
       "https://*.youtube.com/*",
       "https://generativelanguage.googleapis.com/*",
       "https://dev.microsofttranslator.com/*",
-      "https://*.tts.speech.microsoft.com/*"
+      "https://*.tts.speech.microsoft.com/*",
+      "https://speech.platform.bing.com/*"
    ],
    "icons": {
       "16": "icon/16x16.png",
       "32": "icon/32x32.png",
       "64": "icon/64x64.png"
    },
-   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAjdMBOcjoo/WIWTfvSOxkZY8mevkPsIXuvqVoYMopMlENsf4UO7R5OkjHhC9oDPiNhgbMdSWGojdfiT6bVKqg843Eatm5FLwsSvWHw8IL5on0B/SllQjWsRl4JgSSxngfV4H4ZAst2DNQpM5tRWNI9jeYMafDQCUYSxXLD9PiiB2IOd6HaZRtiOvUrTghSZzzHxK7gWY/8H5QGUEaWuPK1IrBaUm7DpdNkVhfdLrGQNCn4AkafpnEP7vY3um+CkxGpl6GgTMyDaiX0tdqOhyhMFtAAa2UFVBgejweCsT0TrUJl/skII7PjezLHNO+0hjCHHsvy39JFJcOQr+ovyTW6QIDAQAB",
+   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAoGBPM/MK3ImggKc0J2OBO5PKb9KcfN6O/5RXhVOMBNVVmcly0BjR/t3kNyev7xKifgi5p6Ng0f/6FQd2OpkUf0GyZ4foQBJl1UxQ/+uXTH3c54XNUScUadmpC4i+iaAo7YT4gsq+od1DJoorCDdMxF1IKhc9TqUIw+WMtw9aHQqKk0MOpf2qfDtI5TtNatq3p+eLJVo5gBZjwYMCeQCk9mmx96xp2nsUQ+cYOyYbrzfN07l2OL07ZwqUhG0rJAZTheUVZhYhkEO4Whz2dlo6LY3CPLmNMhQiUH3aifd6dA6aorqGXjur/LNRyhpIiCIu8dvLkNGhebIvNYk3VA/EwwIDAQAB",
    "manifest_version": 3,
    "name": "__MSG_extensionName__",
-   "permissions": [ "activeTab", "storage" ],
-   "version": "2.4.14"
+   "permissions": [ "activeTab", "storage", "scripting" ],
+   "version": "2.4.16"
 }

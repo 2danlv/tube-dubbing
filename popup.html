@@ -636,6 +636,18 @@
         <label for="api-target-lang">Ngôn ngữ dịch phụ đề</label>
         <select id="api-target-lang" class="input-field">
           <option value="Tiếng Việt" selected>Tiếng Việt (Vietnamese)</option>
+          <option value="Tiếng Anh">Tiếng Anh (English)</option>
+          <option value="Tiếng Nhật">Tiếng Nhật (Japanese)</option>
+          <option value="Tiếng Trung">Tiếng Trung (Chinese)</option>
+          <option value="Tiếng Hàn">Tiếng Hàn (Korean)</option>
+          <option value="Tiếng Pháp">Tiếng Pháp (French)</option>
+          <option value="Tiếng Đức">Tiếng Đức (German)</option>
+          <option value="Tiếng Tây Ban Nha">Tiếng Tây Ban Nha (Spanish)</option>
+          <option value="Tiếng Nga">Tiếng Nga (Russian)</option>
+          <option value="Tiếng Ý">Tiếng Ý (Italian)</option>
+          <option value="Tiếng Séc">Tiếng Séc (Czech)</option>
+          <option value="Tiếng Bồ Đào Nha (Brazil)">Tiếng Bồ Đào Nha - Brazil (Portuguese)</option>
+          <option value="Tiếng Ba Lan">Tiếng Ba Lan (Polish)</option>
         </select>
       </div>
       <div class="form-group">
@@ -671,6 +683,14 @@
           <path d="M11.5 7.5c.017-.183.05-.333.1-.45H10v-.5h2.2c-.12-.3-.32-.6-.5-.8l-.3.3-.35-.35.4-.4c-.2-.2-.42-.38-.65-.53l-.2.2-.35-.35.3-.3c-.22-.11-.47-.2-.73-.27l-.15.4h-.5l.2-.55c-.27-.05-.55-.08-.85-.08v-.5c.33 0 .66.03.97.08L10 3h.5l.17.48c.3.09.58.2.84.34l.24-.24.35.35-.2.2c.23.18.45.38.65.6l.3-.3.35.35-.4.4c.16.2.3.4.4.6H15v.5h-2.2c-.05.15-.08.35-.1.55h.8v.5H11.5z"/>
         </svg>
         <span>Dịch Phụ Đề (AI)</span>
+      </button>
+      <!-- Đọc nguyên văn bản gốc, không dịch qua Gemini -->
+      <button class="icon-btn" id="btn-read-original" title="Đọc phụ đề gốc (không dịch)">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+          <path d="M11.536 14.01A8.47 8.47 0 0 0 14.026 8a8.47 8.47 0 0 0-2.49-6.01l-.708.707A7.47 7.47 0 0 1 13.025 8c0 2.071-.84 3.946-2.197 5.303l.708.707z"/>
+          <path d="M10.121 12.596A6.48 6.48 0 0 0 12.025 8a6.48 6.48 0 0 0-1.904-4.596l-.707.707A5.48 5.48 0 0 1 11.025 8a5.48 5.48 0 0 1-1.61 3.89l.706.706z"/>
+          <path d="M8.707 11.182A4.5 4.5 0 0 0 10.025 8a4.5 4.5 0 0 0-1.318-3.182L8 5.525A3.5 3.5 0 0 1 9.025 8 3.5 3.5 0 0 1 8 10.475l.707.707zM6.717 3.55A.5.5 0 0 1 7 4v8a.5.5 0 0 1-.812.39L3.825 10.5H1.5A.5.5 0 0 1 1 10V6a.5.5 0 0 1 .5-.5h2.325l2.363-1.89a.5.5 0 0 1 .529-.06z"/>
+        </svg>
       </button>
       <!-- Toggle Subtitles Button -->
       <button class="icon-btn" id="btn-toggle-subtitles" title="Tắt hiển thị phụ đề" data-enabled="true">
@@ -750,6 +770,7 @@
     <span id="toast-message">Đã sao chép</span>
   </div>
 
+  <script src="utils/normalizer.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

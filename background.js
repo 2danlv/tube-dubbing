@@ -223,6 +223,175 @@ ${JSON.stringify(chunk.map(item => ({ id: item.id, text: item.text })))}`;
     return parsedArray;
 }
 
+// --- Edge "Read Aloud" TTS qua WebSocket (giong doc tu nhien hon, dung cung catalog giong
+// ma tinh nang Doc to cua trinh duyet Edge dung) ---
+// CHI hoat dong khi chay tren chinh trinh duyet Edge that: server cua Microsoft kiem tra
+// nghiem ngat User-Agent phai chua "Edg/{version}" VA Sec-MS-GEC-Version phai khop dung
+// version do (da kiem chung thuc te). WebSocket trong trinh duyet KHONG the tu set User-Agent
+// gia, nen Chrome/Brave/... se luon bi 403 - vi vay chi bat cach nay khi phat hien dang chay
+// tren Edge that, con lai giu nguyen endpoint MSTranslatorAndroidApp ben duoi.
+const EDGE_TRUSTED_CLIENT_TOKEN = "6A5AA1D4EAFF4E9FB37E23D68491D6F4";
+const EDGE_READALOUD_WSS_URL = "wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1";
+const WIN_EPOCH_SECONDS = 11644473600;
+
+function isRunningOnEdgeBrowser() {
+    return /Edg\/[\d.]+/.test(navigator.userAgent);
+}
+
+function getEdgeVersionForGec() {
+    const match = navigator.userAgent.match(/Edg\/([\d.]+)/);
+    return match ? match[1] : null;
+}
+
+async function generateSecMsGec() {
+    let ticks = Date.now() / 1000;
+    ticks += WIN_EPOCH_SECONDS;
+    ticks -= ticks % 300; // lam tron xuong khung 5 phut gan nhat
+    ticks *= 1e7; // giay -> don vi 100ns (Windows FILETIME ticks)
+    const strToHash = `${Math.round(ticks)}${EDGE_TRUSTED_CLIENT_TOKEN}`;
+    const hashBuffer = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(strToHash));
+    return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, "0")).join("").toUpperCase();
+}
+
+function concatUint8Arrays(chunks) {
+    const total = chunks.reduce((sum, c) => sum + c.length, 0);
+    const result = new Uint8Array(total);
+    let offset = 0;
+    for (const c of chunks) {
+        result.set(c, offset);
+        offset += c.length;
+    }
+    return result;
+}
+
+function fetchTtsAudioViaEdgeReadAloud(text, voice, rate) {
+    return new Promise((resolve, reject) => {
+        const edgeVersion = getEdgeVersionForGec();
+        if (!edgeVersion) {
+            reject(new Error("Khong doc duoc version Edge tu User-Agent."));
+            return;
+        }
+
+        let settled = false;
+        const finishReject = (err) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timeoutId);
+            reject(err);
+        };
+        const finishResolve = (val) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timeoutId);
+            resolve(val);
+        };
+
+        const timeoutId = setTimeout(() => {
+            try { ws.close(); } catch (e) {}
+            finishReject(new Error("Het thoi gian cho phan hoi tu Edge Read Aloud TTS (10s)"));
+        }, 10000);
+
+        const audioChunks = [];
+        let ws;
+
+        (async () => {
+            try {
+                const secMsGec = await generateSecMsGec();
+                const connectionId = generateUuidWithoutDashes();
+                const url = `${EDGE_READALOUD_WSS_URL}?TrustedClientToken=${EDGE_TRUSTED_CLIENT_TOKEN}&Sec-MS-GEC=${secMsGec}&Sec-MS-GEC-Version=1-${edgeVersion}&ConnectionId=${connectionId}`;
+
+                ws = new WebSocket(url);
+                ws.binaryType = "arraybuffer";
+                let turnEnded = false;
+
+                ws.onopen = () => {
+                    try {
+                        const timestamp = new Date().toString();
+                        const speechConfig =
+                            `X-Timestamp:${timestamp}\r\n` +
+                            `Content-Type:application/json; charset=utf-8\r\n` +
+                            `Path:speech.config\r\n\r\n` +
+                            JSON.stringify({
+                                context: {
+                                    synthesis: {
+                                        audio: {
+                                            metadataoptions: {
+                                                sentenceBoundaryEnabled: "false",
+                                                wordBoundaryEnabled: "false"
+                                            },
+                                            outputFormat: "audio-24khz-48kbitrate-mono-mp3"
+                                        }
+                                    }
+                                }
+                            });
+                        ws.send(speechConfig);
+
+                        const requestId = generateUuidWithoutDashes();
+                        const locale = String(voice).split("-").slice(0, 2).join("-");
+                        const escapedText = String(text)
+                            .replace(/&/g, "&amp;")
+                            .replace(/</g, "&lt;")
+                            .replace(/>/g, "&gt;");
+                        const ssml =
+                            `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='${locale}'>` +
+                            `<voice name='${voice}'>` +
+                            `<prosody pitch='+0Hz' rate='${rate}' volume='+0%'>${escapedText}</prosody>` +
+                            `</voice></speak>`;
+                        const ssmlMsg =
+                            `X-RequestId:${requestId}\r\n` +
+                            `Content-Type:application/ssml+xml\r\n` +
+                            `X-Timestamp:${timestamp}\r\n` +
+                            `Path:ssml\r\n\r\n` +
+                            ssml;
+                        ws.send(ssmlMsg);
+                    } catch (err) {
+                        finishReject(err);
+                    }
+                };
+
+                ws.onmessage = (event) => {
+                    try {
+                        if (typeof event.data === "string") {
+                            const headerEnd = event.data.indexOf("\r\n\r\n");
+                            const headers = headerEnd >= 0 ? event.data.substring(0, headerEnd) : event.data;
+                            if (headers.includes("Path:turn.end")) {
+                                turnEnded = true;
+                                try { ws.close(); } catch (e) {}
+                                const totalAudio = concatUint8Arrays(audioChunks);
+                                if (totalAudio.length === 0) {
+                                    finishReject(new Error("Edge Read Aloud TTS tra ve rong (khong co du lieu am thanh)."));
+                                } else {
+                                    finishResolve(totalAudio);
+                                }
+                            }
+                        } else {
+                            const buf = new Uint8Array(event.data);
+                            const view = new DataView(event.data);
+                            const headerLen = view.getUint16(0, false);
+                            const audioData = buf.subarray(2 + headerLen);
+                            if (audioData.length > 0) audioChunks.push(audioData);
+                        }
+                    } catch (err) {
+                        finishReject(err);
+                    }
+                };
+
+                ws.onerror = () => {
+                    // Chi tiet loi (neu co) se den qua onclose bang code/reason
+                };
+
+                ws.onclose = (event) => {
+                    if (!turnEnded) {
+                        finishReject(new Error(`Ket noi Edge Read Aloud TTS dong truoc khi hoan tat (code=${event.code}, da nhan ${audioChunks.length} khoi am thanh)`));
+                    }
+                };
+            } catch (err) {
+                finishReject(err);
+            }
+        })();
+    });
+}
+
 // Đăng ký nhận tin nhắn từ content script
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === "GENERATE_EDGE_TTS") {
@@ -231,14 +400,29 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (voice === "vi-VN-NamNeural") {
             voice = "vi-VN-NamMinhNeural";
         }
-        fetchTtsAudio(text, voice, rate || "-10%")
-            .then(audioBase64 => {
+        const finalRate = rate || "-10%";
+
+        (async () => {
+            try {
+                let audioBase64;
+                if (isRunningOnEdgeBrowser()) {
+                    try {
+                        const audioBytes = await fetchTtsAudioViaEdgeReadAloud(text, voice, finalRate);
+                        audioBase64 = bytesToBase64(audioBytes);
+                        console.log("[XT-Background] Đã dùng Edge Read Aloud TTS (giọng tự nhiên hơn).");
+                    } catch (edgeErr) {
+                        console.warn("[XT-Background] Edge Read Aloud TTS lỗi, fallback về MSTranslatorAndroidApp:", edgeErr);
+                        audioBase64 = await fetchTtsAudio(text, voice, finalRate);
+                    }
+                } else {
+                    audioBase64 = await fetchTtsAudio(text, voice, finalRate);
+                }
                 sendResponse({ status: "success", audioBase64: audioBase64 });
-            })
-            .catch(error => {
+            } catch (error) {
                 console.error("[XT-Background] Lỗi khi tổng hợp giọng nói:", error);
                 sendResponse({ status: "error", message: error.message });
-            });
+            }
+        })();
         return true; // Giữ kênh tin nhắn mở để xử lý bất đồng bộ
     } else if (message.action === "TRANSLATE_TEXT") {
         const { chunk, apiKey, model, targetLang } = message;
